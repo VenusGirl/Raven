@@ -1,0 +1,73 @@
+﻿using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Navigation;
+using StoreListings.Library;
+using test.ViewModels;
+
+namespace test.Views;
+
+public sealed partial class MainPage : Page
+{
+    public MainViewModel ViewModel { get; }
+
+    public MainPage()
+    {
+        ViewModel = App.GetService<MainViewModel>();
+        InitializeComponent();
+        CardView.ViewModel = ViewModel;
+        CardView.LoadCardsMethod = LoadCards;
+    }
+
+    private async Task LoadCards()
+    {
+        ViewModel.HasMoreItems = true;
+
+        var deviceFamily = DeviceFamily.Desktop;
+        var market = Market.US;
+        var language = Lang.en;
+
+        var result = await StoreEdgeFDQuery.GetRecommendations(
+            ViewModel.Category,
+            deviceFamily,
+            market,
+            language,
+            ViewModel.MediaType,
+            ViewModel.CurrentSkipItem
+        );
+
+        if (result.IsSuccess)
+        {
+            if (result.Value.Cards.Count == 0)
+            {
+                ViewModel.HasMoreItems = false;
+            }
+            for (var i = 0; i < result.Value.Cards.Count; i++)
+            {
+                var card = result.Value.Cards[i];
+                ViewModel.Cards.Add(card);
+            }
+            ViewModel.HasCachedResults = true;
+        }
+        else
+        {
+            throw result.Exception;
+        }
+    }
+
+    protected override async void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+
+        // Check if we have cached results to restore
+        if (ViewModel.HasCachedResults)
+        {
+            CardView.SelectedFilterIndex1 = ViewModel.F1Index;
+            CardView.SelectedFilterIndex2 = ViewModel.F2Index;
+        }
+        else
+        {
+            CardView.SelectedFilterIndex1 = 0;
+            CardView.SelectedFilterIndex2 = 0;
+            await CardView.ApplyFilters();
+        }
+    }
+}
