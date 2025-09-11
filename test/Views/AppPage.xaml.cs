@@ -76,8 +76,16 @@ public sealed partial class AppPage : Page
     {
         Debug.WriteLine("button clicked");
         Debug.WriteLine(AppData.ProductID);
+        InstallButton.Visibility = Visibility.Collapsed;
+        ProgressSection.Visibility = Visibility.Visible;
         var urls = await GetDownloadUrl.fetch(AppData.ProductID);
         Debug.WriteLine(urls);
-        Console.WriteLine(urls.Dependencies);
+        Debug.WriteLine(urls.Dependencies.Count);
+        foreach (var dep in urls.Dependencies)
+        {
+            Debug.WriteLine(dep);
+            Debug.WriteLine(dep.Dependencies.Count);
+        }
+        // add downloader and system.automation for installation
     }
 }

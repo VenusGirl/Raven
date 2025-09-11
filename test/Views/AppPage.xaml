@@ -97,25 +97,29 @@
             />
           </Grid>
         </StackPanel>
-        <!--  Install button Section  -->
-        <Grid Margin="6,0,0,0" VerticalAlignment="Center" ColumnSpacing="8">
+        <!--  install button  -->
+        <Button
+          x:Name="InstallButton"
+          Width="120"
+          Height="40"
+          Background="{ThemeResource AccentFillColorDefaultBrush}"
+          Click="InstallButton_Click"
+          Content="Install"
+          FontSize="16"
+          Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
+        />
+        <!--  Progress button Section  -->
+        <Grid
+          x:Name="ProgressSection"
+          Margin="6,0,0,0"
+          VerticalAlignment="Center"
+          ColumnSpacing="8"
+          Visibility="Collapsed"
+        >
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
-          <Button
-            x:Name="InstallButton"
-            Grid.ColumnSpan="2"
-            Height="40"
-            HorizontalAlignment="Stretch"
-            Background="{ThemeResource AccentFillColorDefaultBrush}"
-            Click="InstallButton_Click"
-            Content="Install"
-            FontSize="16"
-            Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
-            Visibility="Visible"
-          />
-          <!--  Progress Bar Section  -->
           <StackPanel Grid.Column="0" Spacing="4">
             <Grid>
               <Grid.ColumnDefinitions>
@@ -139,6 +143,7 @@
               />
             </Grid>
             <ProgressBar
+              x:Name="ProgressBar"
               VerticalAlignment="Center"
               IsIndeterminate="False"
               ShowError="False"
