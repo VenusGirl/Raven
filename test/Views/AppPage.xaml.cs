@@ -86,7 +86,23 @@ public sealed partial class AppPage : Page
 
             UpdateService.StartStatusAnimation("Fetching download URLs");
             var urls = await GetDownloadUrl.fetch(AppData.ProductID);
-            Debug.WriteLine(urls);
+
+            // If urls is null, show a popup and revert UI
+            if (urls == null)
+            {
+                ProgressSection.Visibility = Visibility.Collapsed;
+                InstallButton.Visibility = Visibility.Visible;
+
+                var dialog = new ContentDialog
+                {
+                    Title = "App not supported",
+                    Content = "This app isn’t supported. Try a different app or check again later",
+                    CloseButtonText = "OK",
+                    XamlRoot = this.Content.XamlRoot,
+                };
+                await dialog.ShowAsync();
+                return;
+            }
 
             UpdateService.StartStatusAnimation("Preparing download...");
 

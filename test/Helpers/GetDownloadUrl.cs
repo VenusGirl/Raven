@@ -240,8 +240,6 @@ public static class GetDownloadUrl
                     Dependencies: Array.Empty<FileEntry>()
                 );
             }
-
-            case InstallerType.Unknown:
             default:
                 return null;
         }
