@@ -10,7 +10,9 @@ namespace test.Services;
 
 public class DownloadManagerService
 {
-    private static readonly Lazy<DownloadManagerService> _instance = new(() => new DownloadManagerService());
+    private static readonly Lazy<DownloadManagerService> _instance = new(() =>
+        new DownloadManagerService()
+    );
     public static DownloadManagerService Instance => _instance.Value;
 
     private readonly string _downloadDataPath;
@@ -18,20 +20,16 @@ public class DownloadManagerService
     private DispatcherQueue? _dispatcherQueue;
 
     // Store cancellation tokens for active downloads
-    private readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellationTokens = new();
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellationTokens =
+        new();
 
     public ObservableCollection<DownloadItem> Downloads { get; } = [];
     public HashSet<string> DownloadedProductIds { get; private set; } = [];
 
     private DownloadManagerService()
     {
-        var appDataPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Raven"
-        );
-        Directory.CreateDirectory(appDataPath);
-        _downloadDataPath = Path.Combine(appDataPath, "downloads.json");
-        
+        _downloadDataPath = Path.Combine(AppContext.BaseDirectory, "downloads.json");
+
         LoadDownloads();
     }
 
@@ -73,7 +71,7 @@ public class DownloadManagerService
                 Status = DownloadStatus.Downloading,
                 StartedAt = DateTime.Now,
                 ProductInfo = productInfo,
-                DownloadedFilePaths = []
+                DownloadedFilePaths = [],
             };
 
             RunOnUIThread(() => Downloads.Insert(0, item));
@@ -173,7 +171,11 @@ public class DownloadManagerService
         lock (_lock)
         {
             var item = Downloads.FirstOrDefault(d => d.ProductId == productId);
-            return item != null && (item.Status == DownloadStatus.Downloading || item.Status == DownloadStatus.Pending);
+            return item != null
+                && (
+                    item.Status == DownloadStatus.Downloading
+                    || item.Status == DownloadStatus.Pending
+                );
         }
     }
 
@@ -193,7 +195,10 @@ public class DownloadManagerService
                     {
                         // Reset any "Downloading" status to "Cancelled" on app restart
                         // since the download won't continue
-                        if (item.Status == DownloadStatus.Downloading || item.Status == DownloadStatus.Pending)
+                        if (
+                            item.Status == DownloadStatus.Downloading
+                            || item.Status == DownloadStatus.Pending
+                        )
                         {
                             item.Status = DownloadStatus.Cancelled;
                         }

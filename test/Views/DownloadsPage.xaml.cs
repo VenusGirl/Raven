@@ -4,6 +4,7 @@ using test.Contracts.Services;
 using test.Models;
 using test.Services;
 using test.ViewModels;
+using System.IO;
 
 namespace test.Views;
 
@@ -26,6 +27,20 @@ public sealed partial class DownloadsPage : Page
             // Pass the DownloadItem - AppPage will handle fetching product if needed
             _navigationService.NavigateTo(typeof(AppViewModel).FullName!, item);
         }
+    }
+
+    private void OpenFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        var downloadsPath = Path.Combine(AppContext.BaseDirectory, "downloads");
+        Directory.CreateDirectory(downloadsPath);
+
+        var psi = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = downloadsPath,
+            UseShellExecute = true
+        };
+
+        System.Diagnostics.Process.Start(psi);
     }
 
     private void CancelButton_Click(object sender, RoutedEventArgs e)
