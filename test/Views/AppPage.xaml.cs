@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
@@ -20,6 +21,14 @@ public sealed partial class AppPage : Page
     private StoreEdgeFDProduct? _currentProductInfo;
     private DownloadItem? _activeDownloadItem;
 
+    private static readonly string[] InstallableExtensions =
+    [
+        ".msix",
+        ".appx",
+        ".msixbundle",
+        ".appxbundle",
+    ];
+
     public AppPage()
     {
         ViewModel = App.GetService<AppViewModel>();
@@ -36,7 +45,7 @@ public sealed partial class AppPage : Page
             StoreEdgeFDProduct p => (p, (string?)null),
             DownloadItem { ProductInfo: not null } d => (d.ProductInfo, (string?)null),
             DownloadItem d => (null, d.ProductId),
-            _ => ((StoreEdgeFDProduct?)null, (string?)null)
+            _ => ((StoreEdgeFDProduct?)null, (string?)null),
         };
 
         if (productInfo != null)
@@ -94,7 +103,10 @@ public sealed partial class AppPage : Page
         else
         {
             SetLoading(false);
-            await ShowErrorDialogAsync("Error loading app", $"Could not load app details: {result.Exception?.Message}");
+            await ShowErrorDialogAsync(
+                "Error loading app",
+                $"Could not load app details: {result.Exception?.Message}"
+            );
         }
     }
 
@@ -106,7 +118,8 @@ public sealed partial class AppPage : Page
 
     private void UpdateInstallButtonState()
     {
-        if (_currentProductInfo == null) return;
+        if (_currentProductInfo == null)
+            return;
 
         var productId = _currentProductInfo.ProductId;
         var downloadManager = DownloadManagerService.Instance;
@@ -137,7 +150,7 @@ public sealed partial class AppPage : Page
         // Set initial values
         ProgressBar.Value = item.Progress;
         StatusText.Text = item.StatusText;
-        
+
         // Subscribe to property changes
         item.PropertyChanged += OnDownloadItemPropertyChanged;
     }
@@ -151,9 +164,13 @@ public sealed partial class AppPage : Page
         }
     }
 
-    private void OnDownloadItemPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    private void OnDownloadItemPropertyChanged(
+        object? sender,
+        System.ComponentModel.PropertyChangedEventArgs e
+    )
     {
-        if (sender is not DownloadItem item) return;
+        if (sender is not DownloadItem item)
+            return;
 
         DispatcherQueue.TryEnqueue(() =>
         {
@@ -169,7 +186,11 @@ public sealed partial class AppPage : Page
                     if (item.Status == DownloadStatus.Completed)
                     {
                         UnbindFromDownloadItem();
-                        SetInstallButtonState(content: "Installed", enabled: false, showProgress: false);
+                        SetInstallButtonState(
+                            content: "Installed",
+                            enabled: false,
+                            showProgress: false
+                        );
                     }
                     else if (item.Status is DownloadStatus.Cancelled or DownloadStatus.Failed)
                     {
@@ -187,7 +208,11 @@ public sealed partial class AppPage : Page
         UnbindFromDownloadItem();
     }
 
-    private void SetInstallButtonState(string content = "Install", bool enabled = true, bool showProgress = false)
+    private void SetInstallButtonState(
+        string content = "Install",
+        bool enabled = true,
+        bool showProgress = false
+    )
     {
         InstallButton.Content = content;
         InstallButton.IsEnabled = enabled;
@@ -195,8 +220,10 @@ public sealed partial class AppPage : Page
         ProgressSection.Visibility = showProgress ? Visibility.Visible : Visibility.Collapsed;
 
         InstallButton.Background = enabled
-            ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AccentFillColorDefaultBrush"]
-            : (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ControlFillColorDisabledBrush"];
+            ? (Microsoft.UI.Xaml.Media.Brush)
+                Application.Current.Resources["AccentFillColorDefaultBrush"]
+            : (Microsoft.UI.Xaml.Media.Brush)
+                Application.Current.Resources["ControlFillColorDisabledBrush"];
     }
 
     private async Task ShowErrorDialogAsync(string title, string content)
@@ -220,12 +247,36 @@ public sealed partial class AppPage : Page
     private void RightArrowButton_Click(object sender, RoutedEventArgs e)
     {
         double offset = ScreenshotsScrollViewer.HorizontalOffset + 654;
-        ScreenshotsScrollViewer.ChangeView(Math.Min(ScreenshotsScrollViewer.ScrollableWidth, offset), null, null);
+        ScreenshotsScrollViewer.ChangeView(
+            Math.Min(ScreenshotsScrollViewer.ScrollableWidth, offset),
+            null,
+            null
+        );
+    }
+
+    private static bool IsInstallablePackage(string path)
+    {
+        var ext = Path.GetExtension(path);
+        return InstallableExtensions.Any(e => ext.Equals(e, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string? PickMainPackage(IEnumerable<string> paths)
+    {
+        // Prefer bundles first, then single packages.
+        var list = paths.Where(IsInstallablePackage).ToList();
+        return list.OrderByDescending(p =>
+                p.EndsWith(".msixbundle", StringComparison.OrdinalIgnoreCase)
+            )
+            .ThenByDescending(p => p.EndsWith(".appxbundle", StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(p => p.EndsWith(".msix", StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(p => p.EndsWith(".appx", StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault();
     }
 
     private async void InstallButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_currentProductInfo == null) return;
+        if (_currentProductInfo == null)
+            return;
 
         var productId = _currentProductInfo.ProductId;
         var downloadManager = DownloadManagerService.Instance;
@@ -287,43 +338,72 @@ public sealed partial class AppPage : Page
                 return;
             }
 
-            downloadManager.UpdateDownloadStatus(productId, DownloadStatus.Completed);
+            var downloadedPaths = downloadManager.GetDownload(productId)?.DownloadedFilePaths ?? [];
+            var mainPackage = PickMainPackage(downloadedPaths);
+            var dependencyPackages = downloadedPaths
+                .Where(p => !string.Equals(p, mainPackage, StringComparison.OrdinalIgnoreCase))
+                .Where(IsInstallablePackage)
+                .ToList();
 
-            // Attempt to install the downloaded package (AppX/MSIX)
-            var installed = false;
-            var latestPackage = downloadManager
-                .GetDownload(productId)
-                ?.DownloadedFilePaths
-                ?.LastOrDefault(p =>
-                    p.EndsWith(".msix", StringComparison.OrdinalIgnoreCase)
-                    || p.EndsWith(".appx", StringComparison.OrdinalIgnoreCase)
-                    || p.EndsWith(".msixbundle", StringComparison.OrdinalIgnoreCase)
-                    || p.EndsWith(".appxbundle", StringComparison.OrdinalIgnoreCase)
-                );
-
-            if (!string.IsNullOrWhiteSpace(latestPackage))
+            if (string.IsNullOrWhiteSpace(mainPackage))
             {
-                StatusText.Text = "Installing...";
-
-                var progress = new Progress<AppPackageInstaller.InstallProgress>(p =>
-                {
-                    ProgressBar.Value = Math.Clamp(p.Percent, 0, 100);
-                    if (!string.IsNullOrWhiteSpace(p.State))
-                    {
-                        StatusText.Text = p.State;
-                    }
-                });
-
-                await AppPackageInstaller.InstallAsync(latestPackage, progress, _cts.Token);
-                installed = true;
+                downloadManager.UpdateDownloadStatus(productId, DownloadStatus.Failed);
+                UnbindFromDownloadItem();
+                SetInstallButtonState(content: "Retry", enabled: true, showProgress: false);
+                await ShowErrorDialogAsync(
+                    "Installation failed",
+                    "No installable package was found in the downloaded files."
+                );
+                return;
             }
 
+            UpdateService.StartStatusAnimation("Installing");
+            StatusText.Text = "Installing...";
+
+            var progress = new Progress<AppPackageInstaller.InstallProgress>(p =>
+            {
+                ProgressBar.Value = Math.Clamp(p.Percent, 0, 100);
+                // Keep the animation text stable; surface state when present.
+                if (!string.IsNullOrWhiteSpace(p.State))
+                    StatusText.Text = p.State;
+            });
+
+            try
+            {
+                await AppPackageInstaller.InstallAsync(
+                    mainPackage,
+                    dependencyPackages,
+                    progress,
+                    _cts.Token
+                );
+            }
+            catch (COMException cex)
+            {
+                HandleDownloadError(productId, "Failed to install.", DownloadStatus.Failed);
+                await ShowErrorDialogAsync(
+                    "Installation failed",
+                    InstallHelper.GetFriendlyMsixError(cex.HResult, cex.Message)
+                );
+                return;
+            }
+            catch (UnauthorizedAccessException ua)
+            {
+                HandleDownloadError(productId, "Failed to install.", DownloadStatus.Failed);
+                await ShowErrorDialogAsync(
+                    "Installation failed",
+                    "Failed: Access denied. Try running as administrator or ensure sideloading policy allows app packages. "
+                        + ua.Message
+                );
+                return;
+            }
+
+            UpdateService.StopStatusAnimation();
+
+            // Only mark as completed/installed after installation succeeds.
+            downloadManager.UpdateDownloadStatus(productId, DownloadStatus.Completed);
+
             UnbindFromDownloadItem();
-            SetInstallButtonState(
-                content: installed ? "Installed" : "Downloaded",
-                enabled: false,
-                showProgress: false
-            );
+            SetInstallButtonState(content: "Installed", enabled: false, showProgress: false);
         }
         catch (OperationCanceledException)
         {

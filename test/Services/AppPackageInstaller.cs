@@ -6,8 +6,23 @@ public static class AppPackageInstaller
 {
     public sealed record InstallProgress(int Percent, string? State, string? Activity);
 
+    private static readonly string[] SupportedExtensions =
+    [
+        ".msix",
+        ".appx",
+        ".msixbundle",
+        ".appxbundle",
+    ];
+
+    private static bool IsPackageFile(string path)
+    {
+        var ext = Path.GetExtension(path);
+        return SupportedExtensions.Any(e => ext.Equals(e, StringComparison.OrdinalIgnoreCase));
+    }
+
     public static async Task InstallAsync(
         string packagePath,
+        IEnumerable<string>? dependencyPackagePaths = null,
         IProgress<InstallProgress>? progress = null,
         CancellationToken cancellationToken = default
     )
@@ -18,15 +33,23 @@ public static class AppPackageInstaller
         if (!File.Exists(packagePath))
             throw new FileNotFoundException("Package file not found.", packagePath);
 
+        var deps = (dependencyPackagePaths ?? Array.Empty<string>())
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(File.Exists)
+            .Where(IsPackageFile)
+            .ToList();
+
         progress?.Report(new InstallProgress(0, "Starting", "Install"));
 
         var packageUri = new Uri(packagePath);
+        IReadOnlyList<Uri> depUris = deps.Select(d => new Uri(d)).ToList();
 
         var packageManager = new PackageManager();
 
         var deploymentOperation = packageManager.AddPackageAsync(
             packageUri,
-            null,
+            depUris,
             DeploymentOptions.ForceApplicationShutdown
         );
 
@@ -42,9 +65,7 @@ public static class AppPackageInstaller
         var result = await deploymentOperation.AsTask(cancellationToken);
 
         if (result.ErrorText is { Length: > 0 })
-        {
             throw new InvalidOperationException(result.ErrorText);
-        }
 
         progress?.Report(new InstallProgress(100, "Completed", "Install"));
     }

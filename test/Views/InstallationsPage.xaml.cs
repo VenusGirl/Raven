@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using test.Helpers;
 using test.Services;
 using Windows.Storage;
 using Windows.Storage.Pickers;
@@ -177,7 +178,7 @@ public sealed partial class InstallationsPage : Page
         string? errorMessage = null;
         try
         {
-            await AppPackageInstaller.InstallAsync(path, progress);
+            await AppPackageInstaller.InstallAsync(path, dependencyPackagePaths: null, progress);
             UpdateService.StopStatusAnimation();
             ProgressStatusText.Text = "Installed.";
             ProgressPercentText.Text = "100%";
@@ -186,7 +187,7 @@ public sealed partial class InstallationsPage : Page
         catch (COMException cex)
         {
             UpdateService.StopStatusAnimation();
-            errorMessage = GetFriendlyMsixError(cex.HResult, cex.Message);
+            errorMessage = InstallHelper.GetFriendlyMsixError(cex.HResult, cex.Message);
             ProgressStatusText.Text = "Error";
         }
         catch (UnauthorizedAccessException ua)
@@ -247,29 +248,5 @@ public sealed partial class InstallationsPage : Page
             XamlRoot = this.Content.XamlRoot,
         };
         await dialog.ShowAsync();
-    }
-
-    private static string GetFriendlyMsixError(int hresult, string message)
-    {
-        // Common MSIX/AppX deployment HRESULTs
-        const int ERROR_INSTALL_CONFLICTING_PACKAGE = unchecked((int)0x80073D06); // Same or higher version installed
-        const int ERROR_DEPLOYMENT_IN_PROGRESS = unchecked((int)0x80073D01); // Another install in progress
-        const int ERROR_INVALID_PACKAGE = unchecked((int)0x80073CF3);
-        const int ERROR_PACKAGE_NOT_FOUND = unchecked((int)0x80073CFA);
-        const int ERROR_DEPLOYMENT_FAILURE = unchecked((int)0x80073CF9);
-
-        return hresult switch
-        {
-            ERROR_INSTALL_CONFLICTING_PACKAGE =>
-                "A newer or the same version is already installed.",
-            ERROR_DEPLOYMENT_IN_PROGRESS =>
-                "Another installation is in progress. Wait for it to finish and try again.",
-            ERROR_INVALID_PACKAGE =>
-                "Invalid or unsupported package. Ensure the package and dependencies are supported for your system.",
-            ERROR_PACKAGE_NOT_FOUND => "Package not found. Check the selected file path.",
-            ERROR_DEPLOYMENT_FAILURE =>
-                "Windows deployment failed. Check system policies or try again.",
-            _ => $"Windows deployment error (0x{hresult:X8}). {message}",
-        };
     }
 }
