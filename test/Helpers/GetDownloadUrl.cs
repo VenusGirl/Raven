@@ -62,6 +62,15 @@ public static class GetDownloadUrl
                 if (!cookieResult.IsSuccess)
                     return null;
 
+                var archRid = SystemInfo.GetOsArchRid();
+                var osArch = archRid switch
+                {
+                    "arm64" => OSArch.ARM64,
+                    "x86" => OSArch.X86,
+                    "arm" => OSArch.ARM,
+                    _ => OSArch.AMD64,
+                };
+
                 var fe3sync = await FE3Handler.SyncUpdatesAsync(
                     cookieResult.Value,
                     packageResult.Value.First().WuCategoryId,
@@ -72,7 +81,8 @@ public static class GetDownloadUrl
                     flightingBranchName,
                     OSVersion.Value,
                     deviceFamily,
-                    cancellationToken
+                    cancellationToken,
+                    osArch
                 );
 
                 if (!fe3sync.IsSuccess)
@@ -97,7 +107,8 @@ public static class GetDownloadUrl
                         flightingBranchName,
                         OSVersion.Value,
                         deviceFamily,
-                        cancellationToken
+                        cancellationToken,
+                        osArch
                     );
 
                     if (fileUrlResult.IsSuccess)
@@ -105,7 +116,7 @@ public static class GetDownloadUrl
                 }
 
                 // Choose latest applicable main (non-framework) that matches OS + device family + arch
-                var arch = SystemInfo.GetOsArchRid();
+                var arch = archRid;
 
                 static bool ArchMatches(string name, string archRid)
                 {
