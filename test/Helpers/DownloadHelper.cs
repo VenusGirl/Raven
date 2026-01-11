@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Net;
 using Downloader;
 using test.Models;
 using test.Services;
@@ -15,6 +16,10 @@ public sealed class DownloadHelper
     )
     {
         const int THROTTLE_MS = 500;
+        const int MAX_RETRIES_PER_FILE = 5;
+        const int NO_PROGRESS_TIMEOUT_MS = 60_000;
+        const int MAX_BACKOFF_MS = 30_000;
+
         var reporter = updateService.GetReporter();
         var downloadManager = DownloadManagerService.Instance;
 
@@ -24,12 +29,13 @@ public sealed class DownloadHelper
         // Per-file progress tracking state
         int lastWholePercent = -1;
         long lastReportTicks = 0;
+        long lastProgressTicks = 0;
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
         var config = new DownloadConfiguration
         {
             ChunkCount = 4,
-            ParallelDownload = true,
+            ParallelDownload = false,
             Timeout = 30000,
             ParallelCount = 2,
             BufferBlockSize = 8192,
@@ -37,6 +43,27 @@ public sealed class DownloadHelper
             MinimumSizeOfChunking = 1024,
             ReserveStorageSpaceBeforeStartingDownload = true,
         };
+
+        static string SanitizeFolderName(string? name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return string.Empty;
+
+            var invalid = Path.GetInvalidFileNameChars();
+            var cleaned = new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray())
+                .Trim();
+
+            // Avoid super-long paths.
+            return cleaned.Length <= 80 ? cleaned : cleaned[..80];
+        }
+
+        var downloadItem = downloadManager.GetDownload(productId);
+        var appFolderName = SanitizeFolderName(downloadItem?.Title);
+        if (string.IsNullOrWhiteSpace(appFolderName))
+            appFolderName = productId;
+
+        var baseDownloadDir = Path.Combine(AppContext.BaseDirectory, "downloads", appFolderName);
+        var depsDownloadDir = Path.Combine(baseDownloadDir, "Dependencies");
 
         // Track file index/total for consistent text in DownloadItem.StatusText
         int totalFiles = 1;
@@ -62,6 +89,8 @@ public sealed class DownloadHelper
 
         totalFiles = Math.Max(1, flattened.Count);
         currentFileIndex = 1;
+
+        var mainUrl = entry.Url;
 
         // Single continuous animation for the page status
         updateService.StartStatusAnimation(
@@ -97,9 +126,11 @@ public sealed class DownloadHelper
 
             var file = flattened[i];
 
+            var isMain = file.Url.Equals(mainUrl, StringComparison.OrdinalIgnoreCase);
+            var targetDir = isMain ? baseDownloadDir : depsDownloadDir;
+
             string destinationPath = Path.Combine(
-                AppContext.BaseDirectory,
-                "downloads",
+                targetDir,
                 Path.GetFileName(file.FileName)
             );
 
@@ -108,91 +139,194 @@ public sealed class DownloadHelper
             if (!string.IsNullOrEmpty(destinationDir) && !Directory.Exists(destinationDir))
                 Directory.CreateDirectory(destinationDir);
 
-            // Reset per-file progress tracking before starting each file
-            lastWholePercent = -1;
-            lastReportTicks = 0;
-            stopwatch.Restart();
+            bool downloaded = false;
 
-            reporter.Report(new UIUpdate(Progress: 0, Details: string.Empty));
-
-            // Create a fresh DownloadService for each file to avoid state leakage
-            using var svc = new DownloadService(config);
-
-            bool currentFileCancelled = false;
-
-            // Bridge external cancellation into the download service
-            using var cancellationRegistration = token.Register(() =>
+            for (int attempt = 1; attempt <= MAX_RETRIES_PER_FILE; attempt++)
             {
-                try
-                {
-                    updateService.UpdateAnimatedStatusBase("Cancelling");
-                    svc.CancelAsync();
-                }
-                catch
-                {
-                    // ignore
-                }
-            });
-
-            svc.DownloadProgressChanged += (s, e) =>
-            {
-                int whole = (int)e.ProgressPercentage;
-                long now = stopwatch.ElapsedMilliseconds;
-
-                if (whole > lastWholePercent)
-                {
-                    if (now - lastReportTicks < THROTTLE_MS && whole != 100)
-                        return;
-                    lastWholePercent = whole;
-                    lastReportTicks = now;
-
-                    double receivedMB = e.ReceivedBytesSize / (1024.0 * 1024.0);
-                    double totalMB = e.TotalBytesToReceive / (1024.0 * 1024.0);
-
-                    reporter.Report(
-                        new UIUpdate(
-                            Progress: e.ProgressPercentage,
-                            Details: $"{whole}% • {receivedMB:F1} / {totalMB:F0} MB"
-                        )
-                    );
-
-                    downloadManager.UpdateDownloadProgress(productId, e.ProgressPercentage);
-                }
-            };
-
-            svc.DownloadFileCompleted += (s, e) =>
-            {
-                if (e.Cancelled)
-                    currentFileCancelled = true;
-            };
-
-            try
-            {
-                await svc.DownloadFileTaskAsync(file.Url, destinationPath, token)
-                    .ConfigureAwait(false);
-
-                if (token.IsCancellationRequested || currentFileCancelled)
+                if (token.IsCancellationRequested)
                 {
                     cancelled = true;
                     break;
                 }
 
-                downloadManager.AddDownloadedFilePath(productId, destinationPath);
-            }
-            catch (OperationCanceledException)
-            {
-                cancelled = true;
-                break;
-            }
-            catch (Exception ex)
-            {
-                hadError = true;
+                using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+                var attemptToken = attemptCts.Token;
+
+                // Reset per-file progress tracking before starting each attempt
+                lastWholePercent = -1;
+                lastReportTicks = 0;
+                stopwatch.Restart();
+                lastProgressTicks = 0;
+
                 reporter.Report(
                     new UIUpdate(
-                        Status: $"Error: {ex.Message}",
-                        Details: "Check network or disk space."
+                        Progress: 0,
+                        Details: attempt == 1
+                            ? string.Empty
+                            : $"Retry {attempt}/{MAX_RETRIES_PER_FILE}"
                     )
                 );
+
+                // Create a fresh DownloadService for each attempt to avoid state leakage
+                using var svc = new DownloadService(config);
+
+                bool currentFileCancelled = false;
+
+                using var cancellationRegistration = token.Register(() =>
+                {
+                    try
+                    {
+                        updateService.UpdateAnimatedStatusBase("Cancelling");
+                        svc.CancelAsync();
+                    }
+                    catch
+                    {
+                        // ignore
+                    }
+                });
+
+                using var stallTimer = new System.Threading.Timer(
+                    _ =>
+                    {
+                        try
+                        {
+                            var elapsed = stopwatch.ElapsedMilliseconds;
+                            var last = Interlocked.Read(ref lastProgressTicks);
+                            if (elapsed - last >= NO_PROGRESS_TIMEOUT_MS)
+                            {
+                                reporter.Report(
+                                    new UIUpdate(Details: "No progress detected. Restarting...")
+                                );
+                                attemptCts.Cancel();
+                                svc.CancelAsync();
+                            }
+                        }
+                        catch
+                        {
+                            // ignore
+                        }
+                    },
+                    null,
+                    NO_PROGRESS_TIMEOUT_MS,
+                    NO_PROGRESS_TIMEOUT_MS
+                );
+
+                svc.DownloadProgressChanged += (s, e) =>
+                {
+                    int whole = (int)e.ProgressPercentage;
+                    long now = stopwatch.ElapsedMilliseconds;
+
+                    // mark progress (bytes or percent)
+                    Interlocked.Exchange(ref lastProgressTicks, now);
+
+                    if (whole > lastWholePercent)
+                    {
+                        if (now - lastReportTicks < THROTTLE_MS && whole != 100)
+                            return;
+                        lastWholePercent = whole;
+                        lastReportTicks = now;
+
+                        double receivedMB = e.ReceivedBytesSize / (1024.0 * 1024.0);
+                        double totalMB = e.TotalBytesToReceive / (1024.0 * 1024.0);
+
+                        reporter.Report(
+                            new UIUpdate(
+                                Progress: e.ProgressPercentage,
+                                Details: $"{whole}% • {receivedMB:F1} / {totalMB:F0} MB"
+                            )
+                        );
+
+                        downloadManager.UpdateDownloadProgress(productId, e.ProgressPercentage);
+                    }
+                };
+
+                svc.DownloadFileCompleted += (s, e) =>
+                {
+                    if (e.Cancelled)
+                        currentFileCancelled = true;
+                };
+
+                try
+                {
+                    await svc.DownloadFileTaskAsync(file.Url, destinationPath, attemptToken)
+                        .ConfigureAwait(false);
+
+                    if (token.IsCancellationRequested || currentFileCancelled)
+                    {
+                        cancelled = true;
+                        break;
+                    }
+
+                    downloadManager.AddDownloadedFilePath(productId, destinationPath);
+                    downloaded = true;
+                    break;
+                }
+                catch (OperationCanceledException) when (!token.IsCancellationRequested)
+                {
+                    // Stall timeout / per-attempt cancel: retry.
+                    if (attempt < MAX_RETRIES_PER_FILE)
+                    {
+                        var delayMs = GetRetryDelayMs(null, attempt, MAX_BACKOFF_MS);
+                        reporter.Report(
+                            new UIUpdate(
+                                Details: $"Restarting... retrying in {delayMs / 1000.0:F1}s..."
+                            )
+                        );
+                        await Task.Delay(delayMs, token).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    hadError = true;
+                    reporter.Report(
+                        new UIUpdate(Status: "Error: Download stalled and exhausted retries.")
+                    );
+                    break;
+                }
+                catch (OperationCanceledException)
+                {
+                    cancelled = true;
+                    break;
+                }
+                catch (WebException ex) when (attempt < MAX_RETRIES_PER_FILE)
+                {
+                    var delayMs = GetRetryDelayMs(ex, attempt, MAX_BACKOFF_MS);
+                    reporter.Report(
+                        new UIUpdate(
+                            Details: $"Temporary network/server issue. Retrying in {delayMs / 1000.0:F1}s..."
+                        )
+                    );
+                    await Task.Delay(delayMs, token).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (attempt < MAX_RETRIES_PER_FILE)
+                {
+                    var delayMs = GetRetryDelayMs(null, attempt, MAX_BACKOFF_MS);
+                    reporter.Report(
+                        new UIUpdate(
+                            Details: $"Error: {ex.Message}. Retrying in {delayMs / 1000.0:F1}s..."
+                        )
+                    );
+                    await Task.Delay(delayMs, token).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    hadError = true;
+                    reporter.Report(
+                        new UIUpdate(
+                            Status: $"Error: {ex.Message}",
+                            Details: "Check network or disk space."
+                        )
+                    );
+                    break;
+                }
+            }
+
+            if (cancelled || hadError)
+                break;
+
+            if (!downloaded)
+            {
+                hadError = true;
+                reporter.Report(new UIUpdate(Status: "Error: Download failed after retries."));
                 break;
             }
         }
@@ -211,5 +345,21 @@ public sealed class DownloadHelper
         {
             reporter.Report(new UIUpdate(Progress: 100, Details: string.Empty));
         }
+    }
+
+    private static int GetRetryDelayMs(WebException? webEx, int attempt, int maxBackoffMs)
+    {
+        int baseDelayMs = (int)Math.Min(maxBackoffMs, 1000 * Math.Pow(2, attempt - 1));
+
+        if (webEx?.Response is HttpWebResponse resp)
+        {
+            // Honor Retry-After when present (common for 429/503).
+            var retryAfter = resp.Headers["Retry-After"];
+            if (int.TryParse(retryAfter, out var seconds) && seconds > 0)
+                return (int)Math.Min(maxBackoffMs, seconds * 1000);
+        }
+
+        // Add small jitter to avoid thundering herd.
+        return baseDelayMs + Random.Shared.Next(0, 500);
     }
 }
