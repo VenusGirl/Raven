@@ -305,7 +305,10 @@ public class DownloadManagerService
 
                 // e.g. `<base>\\downloads\\AppName` or `<base>\\downloads\\AppName\\Dependencies`
                 var parent = Directory.GetParent(dir);
-                if (parent != null && parent.FullName.Equals(baseDownloadsDir, StringComparison.OrdinalIgnoreCase))
+                if (
+                    parent != null
+                    && parent.FullName.Equals(baseDownloadsDir, StringComparison.OrdinalIgnoreCase)
+                )
                 {
                     appDir = dir;
                     break;
@@ -313,7 +316,13 @@ public class DownloadManagerService
 
                 // If we were in `...\\AppName\\Dependencies`, parent is `...\\AppName`.
                 var grandParent = parent?.Parent;
-                if (grandParent != null && grandParent.FullName.Equals(baseDownloadsDir, StringComparison.OrdinalIgnoreCase))
+                if (
+                    grandParent != null
+                    && grandParent.FullName.Equals(
+                        baseDownloadsDir,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
                 {
                     appDir = parent!.FullName;
                     break;
@@ -346,7 +355,10 @@ public class DownloadManagerService
             Debug.WriteLine($"Deleted app folder: {appDir}");
 
             // If `downloads` becomes empty, remove it as well.
-            if (Directory.Exists(baseDownloadsDir) && !Directory.EnumerateFileSystemEntries(baseDownloadsDir).Any())
+            if (
+                Directory.Exists(baseDownloadsDir)
+                && !Directory.EnumerateFileSystemEntries(baseDownloadsDir).Any()
+            )
             {
                 Directory.Delete(baseDownloadsDir, recursive: false);
             }

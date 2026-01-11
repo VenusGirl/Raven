@@ -5,6 +5,103 @@ namespace test.Helpers;
 
 public static class GetDownloadUrl
 {
+    private static bool IsLikelyResourceOnlyPackage(string? fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+            return false;
+
+        var n = fileName;
+
+        // Prune common resource-only / language / scale satellite packages.
+        return n.Contains("language-", StringComparison.OrdinalIgnoreCase)
+            || n.Contains("_language", StringComparison.OrdinalIgnoreCase)
+            || n.Contains("scale-", StringComparison.OrdinalIgnoreCase)
+            || n.Contains("_scale", StringComparison.OrdinalIgnoreCase)
+            || n.Contains("localization", StringComparison.OrdinalIgnoreCase)
+            || n.Contains(".resources", StringComparison.OrdinalIgnoreCase)
+            || n.Contains("resources", StringComparison.OrdinalIgnoreCase)
+            || n.Contains("resource", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static IEnumerable<(FE3Handler.SyncUpdatesResponse.Update Update, string Url)> ReduceFrameworkDependencyFiles(
+        IReadOnlyList<(FE3Handler.SyncUpdatesResponse.Update Update, string Url)> latestVersionGroup,
+        string archRid
+    )
+    {
+        if (latestVersionGroup.Count == 0)
+            return latestVersionGroup;
+
+        bool IsCompatibleArch(string? name)
+        {
+            name ??= string.Empty;
+
+            var hasX86 = name.Contains("x86", StringComparison.OrdinalIgnoreCase);
+            var hasX64 =
+                name.Contains("x64", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("amd64", StringComparison.OrdinalIgnoreCase);
+            var hasArm64 = name.Contains("arm64", StringComparison.OrdinalIgnoreCase);
+            var hasArm = name.Contains("arm", StringComparison.OrdinalIgnoreCase) && !hasArm64;
+            var neutral = name.Contains("neutral", StringComparison.OrdinalIgnoreCase);
+
+            return archRid switch
+            {
+                "x64" => hasX64 || neutral || (!hasX86 && !hasX64 && !hasArm && !hasArm64),
+                "x86" => hasX86 || neutral || (!hasX86 && !hasX64 && !hasArm && !hasArm64),
+                "arm64" => hasArm64 || neutral || (!hasX86 && !hasX64 && !hasArm && !hasArm64),
+                "arm" => hasArm || neutral || (!hasX86 && !hasX64 && !hasArm && !hasArm64),
+                _ => true,
+            };
+        }
+
+        // Prefer non-resource packages.
+        var nonResource = latestVersionGroup
+            .Where(a => !IsLikelyResourceOnlyPackage(a.Update.FileName))
+            .ToList();
+
+        // Filter out cross-arch packages (e.g., ARM on x64).
+        var archFiltered = nonResource
+            .Where(a =>
+                IsCompatibleArch(a.Update.FileName)
+                || IsCompatibleArch(a.Update.PackageIdentityName)
+            )
+            .ToList();
+
+        // If filtering removed everything, fall back to previous behavior.
+        if (archFiltered.Count == 0)
+            return latestVersionGroup;
+
+        // If multiple remain, prefer the best arch match to avoid pulling extra variants.
+        static int ScoreArch(string? name, string arch)
+        {
+            name ??= string.Empty;
+            var hasX86 = name.Contains("x86", StringComparison.OrdinalIgnoreCase);
+            var hasX64 =
+                name.Contains("x64", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("amd64", StringComparison.OrdinalIgnoreCase);
+            var hasArm64 = name.Contains("arm64", StringComparison.OrdinalIgnoreCase);
+            var hasArm = name.Contains("arm", StringComparison.OrdinalIgnoreCase) && !hasArm64;
+            var neutral = name.Contains("neutral", StringComparison.OrdinalIgnoreCase);
+
+            return arch switch
+            {
+                "arm64" => hasArm64 ? 3 : neutral ? 2 : 0,
+                "arm" => hasArm ? 3 : neutral ? 2 : 0,
+                "x86" => hasX86 ? 3 : neutral ? 2 : 0,
+                "x64" => hasX64 ? 3 : neutral ? 2 : (!hasArm64 && !hasArm && !hasX86 && !hasX64) ? 1 : 0,
+                _ => 0,
+            };
+        }
+
+        var best = archFiltered
+            .OrderByDescending(a =>
+                ScoreArch(a.Update.FileName ?? a.Update.PackageIdentityName, archRid)
+            )
+            .ThenByDescending(a => (a.Update.FileName ?? string.Empty).Length)
+            .FirstOrDefault();
+
+        return best.Update is null ? archFiltered : new[] { best };
+    }
+
     public static async Task<FileEntry?> fetch(
         string productId,
         CancellationToken cancellationToken = default,
@@ -201,9 +298,12 @@ public static class GetDownloadUrl
                             var latestGroup = applicable
                                 .GroupBy(a => a.Update.Version)
                                 .OrderByDescending(g => g.Key)
-                                .First();
+                                .First()
+                                .ToList();
 
-                            foreach (var a in latestGroup)
+                            var reduced = ReduceFrameworkDependencyFiles(latestGroup, arch);
+
+                            foreach (var a in reduced)
                             {
                                 depEntries.Add(
                                     new FileEntry(

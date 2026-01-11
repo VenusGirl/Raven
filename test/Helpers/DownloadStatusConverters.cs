@@ -30,9 +30,7 @@ public class CompletedStatusToVisibilityConverter : IValueConverter
     {
         if (value is DownloadStatus status)
         {
-            return status == DownloadStatus.Completed
-                ? Visibility.Visible
-                : Visibility.Collapsed;
+            return status == DownloadStatus.Completed ? Visibility.Visible : Visibility.Collapsed;
         }
         return Visibility.Collapsed;
     }

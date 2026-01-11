@@ -50,8 +50,9 @@ public sealed class DownloadHelper
                 return string.Empty;
 
             var invalid = Path.GetInvalidFileNameChars();
-            var cleaned = new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray())
-                .Trim();
+            var cleaned = new string(
+                name.Select(c => invalid.Contains(c) ? '_' : c).ToArray()
+            ).Trim();
 
             // Avoid super-long paths.
             return cleaned.Length <= 80 ? cleaned : cleaned[..80];
@@ -129,10 +130,7 @@ public sealed class DownloadHelper
             var isMain = file.Url.Equals(mainUrl, StringComparison.OrdinalIgnoreCase);
             var targetDir = isMain ? baseDownloadDir : depsDownloadDir;
 
-            string destinationPath = Path.Combine(
-                targetDir,
-                Path.GetFileName(file.FileName)
-            );
+            string destinationPath = Path.Combine(targetDir, Path.GetFileName(file.FileName));
 
             Debug.WriteLine(destinationPath);
             var destinationDir = Path.GetDirectoryName(destinationPath);
@@ -340,10 +338,86 @@ public sealed class DownloadHelper
         if (cancelled)
         {
             downloadManager.UpdateDownloadStatusText(productId, "Download canceled.");
+            return;
         }
-        else if (!hadError)
+
+        if (hadError)
+            return;
+
+        reporter.Report(new UIUpdate(Progress: 100, Details: string.Empty));
+
+        // Begin install phase and reflect it in Downloads page.
+        downloadManager.UpdateDownloadStatus(productId, test.Models.DownloadStatus.Installing);
+        downloadManager.UpdateDownloadProgress(productId, 0);
+        downloadManager.UpdateDownloadStatusText(productId, "Installing");
+        updateService.StartStatusAnimation("Installing");
+
+        var mainPackagePath = downloadItem?.DownloadedFilePaths.FirstOrDefault(p =>
+            !string.IsNullOrWhiteSpace(p)
+            && string.Equals(
+                Path.GetFileName(p),
+                Path.GetFileName(entry.FileName),
+                StringComparison.OrdinalIgnoreCase
+            )
+        );
+
+        if (string.IsNullOrWhiteSpace(mainPackagePath) || !File.Exists(mainPackagePath))
         {
-            reporter.Report(new UIUpdate(Progress: 100, Details: string.Empty));
+            // Can't locate main package on disk; mark failed.
+            updateService.StopStatusAnimation();
+            downloadManager.UpdateDownloadStatusText(
+                productId,
+                "Install failed: main package missing."
+            );
+            downloadManager.UpdateDownloadStatus(productId, test.Models.DownloadStatus.Failed);
+            return;
+        }
+
+        var depPaths = (downloadItem?.DownloadedFilePaths ?? [])
+            .Where(p =>
+                !string.IsNullOrWhiteSpace(p)
+                && File.Exists(p)
+                && !string.Equals(p, mainPackagePath, StringComparison.OrdinalIgnoreCase)
+            )
+            .ToList();
+
+        try
+        {
+            var installProgress = new Progress<AppPackageInstaller.InstallProgress>(p =>
+            {
+                var percent = Math.Clamp(p.Percent, 0, 100);
+                downloadManager.UpdateDownloadProgress(productId, percent);
+
+                var state = string.IsNullOrWhiteSpace(p.State) ? "" : $" • {p.State}";
+                var activity = string.IsNullOrWhiteSpace(p.Activity) ? "Installing" : p.Activity;
+                downloadManager.UpdateDownloadStatusText(
+                    productId,
+                    $"{activity}... {percent}%{state}"
+                );
+            });
+
+            await AppPackageInstaller.InstallAsync(
+                mainPackagePath,
+                dependencyPackagePaths: depPaths,
+                progress: installProgress,
+                cancellationToken: token
+            );
+
+            updateService.StopStatusAnimation();
+            downloadManager.UpdateDownloadStatusText(productId, null);
+            downloadManager.UpdateDownloadStatus(productId, test.Models.DownloadStatus.Completed);
+        }
+        catch (OperationCanceledException)
+        {
+            updateService.StopStatusAnimation();
+            downloadManager.UpdateDownloadStatusText(productId, "Install canceled.");
+            downloadManager.UpdateDownloadStatus(productId, test.Models.DownloadStatus.Cancelled);
+        }
+        catch (Exception ex)
+        {
+            updateService.StopStatusAnimation();
+            downloadManager.UpdateDownloadStatusText(productId, $"Install failed: {ex.Message}");
+            downloadManager.UpdateDownloadStatus(productId, test.Models.DownloadStatus.Failed);
         }
     }
 
