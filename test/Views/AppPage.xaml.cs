@@ -27,6 +27,9 @@ public sealed partial class AppPage : Page
     private double _progressDisplayed;
     private long _lastLerpTickMs;
 
+    // Keep a stable delegate so we can unsubscribe correctly.
+    private Windows.Foundation.TypedEventHandler<DispatcherQueueTimer, object>? _progressLerpTick;
+
     private static readonly string[] InstallableExtensions =
     [
         ".msix",
@@ -197,7 +200,8 @@ public sealed partial class AppPage : Page
 
         _progressLerpTimer = DispatcherQueue.CreateTimer();
         _progressLerpTimer.Interval = TimeSpan.FromMilliseconds(16); // ~60fps
-        _progressLerpTimer.Tick += (_, __) =>
+
+        _progressLerpTick = (_, __) =>
         {
             var now = Environment.TickCount64;
             var dt = Math.Clamp((now - _lastLerpTickMs) / 1000.0, 0, 0.1);
@@ -222,6 +226,7 @@ public sealed partial class AppPage : Page
             }
         };
 
+        _progressLerpTimer.Tick += _progressLerpTick;
         _progressLerpTimer.Start();
     }
 
@@ -231,7 +236,13 @@ public sealed partial class AppPage : Page
             return;
 
         _progressLerpTimer.Stop();
-        _progressLerpTimer.Tick -= (_, __) => { };
+
+        if (_progressLerpTick is not null)
+        {
+            _progressLerpTimer.Tick -= _progressLerpTick;
+            _progressLerpTick = null;
+        }
+
         _progressLerpTimer = null;
     }
 

@@ -38,14 +38,23 @@ public sealed class DownloadHelper
 
         var config = new DownloadConfiguration
         {
+            // Best practice for large files: avoid up-front reservation / pre-allocation.
+            // Pre-allocating multi-GB files can look like a hang due to long disk writes.
+            ReserveStorageSpaceBeforeStartingDownload = false,
+
+            // Speed: enable parallel chunked download, but keep it conservative
+            // to avoid disk thrash/memory pressure on very large files.
+            ParallelDownload = true,
             ChunkCount = 4,
-            ParallelDownload = false,
-            Timeout = 30000,
             ParallelCount = 2,
-            BufferBlockSize = 8192,
+
+            Timeout = 30000,
+
+            // Larger buffer improves throughput and reduces event overhead on large transfers.
+            BufferBlockSize = 1024 * 1024,
+
             MaximumBytesPerSecond = 0,
             MinimumSizeOfChunking = 1024,
-            ReserveStorageSpaceBeforeStartingDownload = true,
         };
 
         static string SanitizeFolderName(string? name)
