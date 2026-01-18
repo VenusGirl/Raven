@@ -20,6 +20,8 @@ public sealed class DownloadHelper
         const int MAX_RETRIES_PER_FILE = 5;
         const int NO_PROGRESS_TIMEOUT_MS = 60_000;
         const int MAX_BACKOFF_MS = 30_000;
+        const int PERSIST_THROTTLE_MS = 2_000;
+        const int BYTES_UI_THROTTLE_MS = 250;
 
         var reporter = updateService.GetReporter();
         var downloadManager = DownloadManagerService.Instance;
@@ -31,6 +33,7 @@ public sealed class DownloadHelper
         int lastWholePercent = -1;
         long lastReportTicks = 0;
         long lastProgressTicks = 0;
+        long lastBytesUiTicks = 0;
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
         var config = new DownloadConfiguration
@@ -222,6 +225,18 @@ public sealed class DownloadHelper
                     NO_PROGRESS_TIMEOUT_MS
                 );
 
+                // Throttle persisting the downloads list to disk; frequent writes to downloads.json
+                // during big transfers can block the UI thread.
+                long lastPersistMs = 0;
+                void PersistMilestoneIfDue(long nowMs, bool force = false)
+                {
+                    if (force || nowMs - Interlocked.Read(ref lastPersistMs) >= PERSIST_THROTTLE_MS)
+                    {
+                        Interlocked.Exchange(ref lastPersistMs, nowMs);
+                        downloadManager.SaveDownloadsThrottled();
+                    }
+                }
+
                 svc.DownloadProgressChanged += (s, e) =>
                 {
                     int whole = (int)e.ProgressPercentage;
@@ -230,14 +245,22 @@ public sealed class DownloadHelper
                     // mark progress (bytes or percent)
                     Interlocked.Exchange(ref lastProgressTicks, now);
 
-                    // Always update byte counts so the list can show size / total even when percent throttles
-                    try
+                    // Throttle byte/total updates; these can fire very frequently and spam the UI.
+                    if (now - lastBytesUiTicks >= BYTES_UI_THROTTLE_MS || whole == 100)
                     {
-                        downloadManager.UpdateDownloadBytes(productId, e.ReceivedBytesSize, e.TotalBytesToReceive);
-                    }
-                    catch
-                    {
-                        // ignore (UI-only enhancement)
+                        lastBytesUiTicks = now;
+                        try
+                        {
+                            downloadManager.UpdateDownloadBytes(
+                                productId,
+                                e.ReceivedBytesSize,
+                                e.TotalBytesToReceive
+                            );
+                        }
+                        catch
+                        {
+                            // ignore (UI-only enhancement)
+                        }
                     }
 
                     // Keep AppPage right-side details in sync (throttled)
@@ -254,14 +277,21 @@ public sealed class DownloadHelper
                         );
                     }
 
-                    if (whole > lastWholePercent)
+                    // Throttle progress updates to the downloads list/UI.
+                    // Updating on every percent (or more frequently) can saturate the UI thread.
+                    if (now - lastReportTicks < THROTTLE_MS && whole != 100)
+                        return;
+
+                    if (whole > lastWholePercent || whole == 100)
                     {
-                        if (now - lastReportTicks < THROTTLE_MS && whole != 100)
-                            return;
                         lastWholePercent = whole;
                         lastReportTicks = now;
 
                         downloadManager.UpdateDownloadProgress(productId, e.ProgressPercentage);
+
+                        // Persist occasionally so a crash doesn't lose too much progress,
+                        // without paying the cost on every update.
+                        PersistMilestoneIfDue(now);
                     }
                 };
 
@@ -385,6 +415,9 @@ public sealed class DownloadHelper
         }
 
         reporter.Report(new UIUpdate(Progress: 100, Details: string.Empty));
+
+        // Persist the final download state.
+        downloadManager.SaveDownloadsThrottled(force: true);
 
         // Begin install phase and reflect it in Downloads page.
         downloadManager.UpdateDownloadStatus(productId, test.Models.DownloadStatus.Installing);

@@ -99,6 +99,16 @@ public sealed class DownloadItemStatusAnimator
     {
         var baseText = _baseText.TryGetValue(item.ProductId, out var b) ? b : "";
         var dots = _dots.TryGetValue(item.ProductId, out var d) ? d : 0;
-        item.StatusTextOverride = baseText + (dots == 0 ? string.Empty : new string('.', dots));
+
+        // Keep total string width stable to avoid layout shimmer.
+        var tail = dots switch
+        {
+            1 => ".  ",
+            2 => ".. ",
+            3 => "...",
+            _ => "   "
+        };
+
+        item.StatusTextOverride = baseText + tail;
     }
 }

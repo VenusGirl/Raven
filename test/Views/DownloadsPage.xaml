@@ -5,6 +5,7 @@
   xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
   xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
   xmlns:models="using:test.Models"
+  xmlns:behaviors="using:test.Behaviors"
   mc:Ignorable="d"
 >
   <Page.Resources>
@@ -144,7 +145,10 @@
                         <Run Text="{Binding Progress, Mode=OneWay, Converter={StaticResource ProgressToPercentTextConverter}}" />
                       </TextBlock>
                     </Grid>
-                    <ProgressBar Maximum="100" Value="{Binding Progress, Mode=OneWay}" />
+                    <ProgressBar
+                      Maximum="100"
+                      behaviors:LerpProgressBarBehavior.TargetValue="{Binding Progress, Mode=OneWay}"
+                    />
                   </StackPanel>
                 </Grid>
               </Grid>

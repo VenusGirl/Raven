@@ -285,7 +285,7 @@ public class DownloadManagerService
         }
     }
 
-    private void SaveDownloads()
+    private async Task SaveDownloadsAsync()
     {
         try
         {
@@ -294,13 +294,76 @@ public class DownloadManagerService
             {
                 itemsToSave = Downloads.ToList();
             }
+
             var options = new JsonSerializerOptions { WriteIndented = true };
             var json = JsonSerializer.Serialize(itemsToSave, options);
-            File.WriteAllText(_downloadDataPath, json);
+
+            // Write to temp file then replace to avoid partial/corrupt writes.
+            var tmpPath = _downloadDataPath + ".tmp";
+            await File.WriteAllTextAsync(tmpPath, json).ConfigureAwait(false);
+
+            try
+            {
+                File.Copy(tmpPath, _downloadDataPath, overwrite: true);
+            }
+            finally
+            {
+                try { File.Delete(tmpPath); } catch { }
+            }
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"Error saving downloads: {ex.Message}");
+        }
+    }
+
+    // Keep sync API for existing callers.
+    private void SaveDownloads() => SaveDownloadsThrottled(force: true);
+
+    private readonly object _saveGate = new();
+    private DateTimeOffset _lastSave = DateTimeOffset.MinValue;
+    private Task _saveTask = Task.CompletedTask;
+    private System.Threading.Timer? _debounceTimer;
+    private volatile bool _savePending;
+
+    /// <summary>
+    /// Debounced + queued persistence: collapses frequent save requests into a single disk write.
+    /// </summary>
+    public void SaveDownloadsThrottled(bool force = false)
+    {
+        lock (_saveGate)
+        {
+            _savePending = true;
+
+            // Ensure timer exists
+            _debounceTimer ??= new System.Threading.Timer(
+                _ => FlushPendingSave(),
+                null,
+                Timeout.Infinite,
+                Timeout.Infinite
+            );
+
+            var dueMs = force ? 0 : 1500; // coarse debounce to cut disk bandwidth
+            _debounceTimer.Change(dueMs, Timeout.Infinite);
+        }
+    }
+
+    private void FlushPendingSave()
+    {
+        lock (_saveGate)
+        {
+            if (!_savePending)
+                return;
+
+            _savePending = false;
+
+            // Queue behind previous save; never run concurrently.
+            _saveTask = _saveTask.ContinueWith(
+                _ => SaveDownloadsAsync(),
+                CancellationToken.None,
+                TaskContinuationOptions.None,
+                TaskScheduler.Default
+            ).Unwrap();
         }
     }
 

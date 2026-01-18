@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
@@ -20,6 +21,11 @@ public sealed partial class AppPage : Page
     private CancellationTokenSource? _cts;
     private StoreEdgeFDProduct? _currentProductInfo;
     private DownloadItem? _activeDownloadItem;
+
+    private DispatcherQueueTimer? _progressLerpTimer;
+    private double _progressTarget;
+    private double _progressDisplayed;
+    private long _lastLerpTickMs;
 
     private static readonly string[] InstallableExtensions =
     [
@@ -148,8 +154,12 @@ public sealed partial class AppPage : Page
     private void BindToDownloadItem(DownloadItem item)
     {
         // Set initial values
-        ProgressBar.Value = item.Progress;
+        _progressDisplayed = item.Progress;
+        _progressTarget = item.Progress;
+        ProgressBar.Value = _progressDisplayed;
         StatusText.Text = item.StatusText;
+
+        EnsureProgressLerpTimer();
 
         // Keep UpdateService in sync so XAML-bound right-side details/progress show correctly.
         UpdateService.SetProgress(item.Progress);
@@ -174,6 +184,55 @@ public sealed partial class AppPage : Page
             _activeDownloadItem.PropertyChanged -= OnDownloadItemPropertyChanged;
             _activeDownloadItem = null;
         }
+
+        StopProgressLerpTimer();
+    }
+
+    private void EnsureProgressLerpTimer()
+    {
+        if (_progressLerpTimer != null)
+            return;
+
+        _lastLerpTickMs = Environment.TickCount64;
+
+        _progressLerpTimer = DispatcherQueue.CreateTimer();
+        _progressLerpTimer.Interval = TimeSpan.FromMilliseconds(16); // ~60fps
+        _progressLerpTimer.Tick += (_, __) =>
+        {
+            var now = Environment.TickCount64;
+            var dt = Math.Clamp((now - _lastLerpTickMs) / 1000.0, 0, 0.1);
+            _lastLerpTickMs = now;
+
+            // Ease towards target. Higher speed => snappier.
+            const double speed = 12.0;
+            var alpha = 1.0 - Math.Exp(-speed * dt);
+
+            _progressDisplayed = _progressDisplayed + ((_progressTarget - _progressDisplayed) * alpha);
+
+            // Snap when very close to avoid endless tiny updates.
+            if (Math.Abs(_progressTarget - _progressDisplayed) < 0.05)
+                _progressDisplayed = _progressTarget;
+
+            ProgressBar.Value = _progressDisplayed;
+
+            // Stop ticking when settled and no active download.
+            if (_activeDownloadItem == null && Math.Abs(_progressTarget - _progressDisplayed) < 0.001)
+            {
+                StopProgressLerpTimer();
+            }
+        };
+
+        _progressLerpTimer.Start();
+    }
+
+    private void StopProgressLerpTimer()
+    {
+        if (_progressLerpTimer is null)
+            return;
+
+        _progressLerpTimer.Stop();
+        _progressLerpTimer.Tick -= (_, __) => { };
+        _progressLerpTimer = null;
     }
 
     private void OnDownloadItemPropertyChanged(
@@ -189,7 +248,10 @@ public sealed partial class AppPage : Page
             switch (e.PropertyName)
             {
                 case nameof(DownloadItem.Progress):
-                    ProgressBar.Value = item.Progress;
+                    // Set target; timer does smooth display.
+                    _progressTarget = item.Progress;
+                    EnsureProgressLerpTimer();
+
                     UpdateService.SetProgress(item.Progress);
 
                     // Keep details string in sync with progress

@@ -109,9 +109,15 @@ public static class SettingsStorageExtensions
         if (file != null)
         {
             using IRandomAccessStream stream = await file.OpenReadAsync();
+
+            // Guard: ReadBytesAsync loads the entire file into memory.
+            // For large files, callers should stream instead of using this helper.
+            if (stream.Size > int.MaxValue)
+                throw new InvalidOperationException("File too large to read into a single byte array.");
+
             using var reader = new DataReader(stream.GetInputStreamAt(0));
             await reader.LoadAsync((uint)stream.Size);
-            var bytes = new byte[stream.Size];
+            var bytes = new byte[(int)stream.Size];
             reader.ReadBytes(bytes);
             return bytes;
         }
