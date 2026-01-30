@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Net;
 using Downloader;
+using Windows.Management.Deployment;
 using test.Models;
 using test.Services;
 
@@ -425,6 +426,7 @@ public sealed class DownloadHelper
                 downloadManager.UpdateDownloadBytes(productId, null, null);
             }
             catch { }
+            downloadManager.UpdateDownloadStatus(productId, test.Models.DownloadStatus.Cancelled);
             return;
         }
 
@@ -528,8 +530,17 @@ public sealed class DownloadHelper
         {
             animator.Stop(downloadItem);
             updateService.StopStatusAnimation();
-            downloadManager.UpdateDownloadStatusText(productId, "Install canceled.");
-            downloadManager.UpdateDownloadStatus(productId, test.Models.DownloadStatus.Cancelled);
+            var packageFamilyName = downloadItem.ProductInfo?.PackageFamilyName;
+            if (IsPackageInstalled(packageFamilyName))
+            {
+                downloadManager.UpdateDownloadStatusText(productId, null);
+                downloadManager.UpdateDownloadStatus(productId, test.Models.DownloadStatus.Completed);
+            }
+            else
+            {
+                downloadManager.UpdateDownloadStatusText(productId, "Install canceled.");
+                downloadManager.UpdateDownloadStatus(productId, test.Models.DownloadStatus.Cancelled);
+            }
         }
         catch (Exception ex)
         {
@@ -537,6 +548,22 @@ public sealed class DownloadHelper
             updateService.StopStatusAnimation();
             downloadManager.UpdateDownloadStatusText(productId, $"Install failed: {ex.Message}");
             downloadManager.UpdateDownloadStatus(productId, test.Models.DownloadStatus.Failed);
+        }
+    }
+
+    private static bool IsPackageInstalled(string? packageFamilyName)
+    {
+        if (string.IsNullOrWhiteSpace(packageFamilyName))
+            return false;
+
+        try
+        {
+            var packageManager = new PackageManager();
+            return packageManager.FindPackagesForUser(string.Empty, packageFamilyName).Any();
+        }
+        catch
+        {
+            return false;
         }
     }
 

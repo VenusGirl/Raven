@@ -11,7 +11,7 @@ public class DownloadStatusToVisibilityConverter : IValueConverter
         if (value is DownloadStatus status)
         {
             // Show progress UI for active states
-            return status is DownloadStatus.Downloading or DownloadStatus.Pending or DownloadStatus.Installing
+            return status is DownloadStatus.Downloading or DownloadStatus.Pending or DownloadStatus.Installing or DownloadStatus.Cancelling
                 ? Visibility.Visible
                 : Visibility.Collapsed;
         }
@@ -66,7 +66,7 @@ public class NotDownloadingStatusToVisibilityConverter : IValueConverter
     {
         if (value is DownloadStatus status)
         {
-            return status is DownloadStatus.Downloading or DownloadStatus.Pending or DownloadStatus.Installing
+            return status is DownloadStatus.Downloading or DownloadStatus.Pending or DownloadStatus.Installing or DownloadStatus.Cancelling
                 ? Visibility.Collapsed
                 : Visibility.Visible;
         }
@@ -129,11 +129,28 @@ public sealed class DownloadStatusToTextConverter : IValueConverter
                 DownloadStatus.Installing => "Installing...",
                 DownloadStatus.Completed => "Completed",
                 DownloadStatus.Failed => "Failed",
+                DownloadStatus.Cancelling => "Cancelling...",
                 DownloadStatus.Cancelled => "Cancelled",
                 _ => "Unknown"
             };
         }
         return "Unknown";
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
+        throw new NotImplementedException();
+}
+
+public sealed class DownloadStatusToIndeterminateConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language)
+    {
+        if (value is DownloadStatus status)
+        {
+            return status is DownloadStatus.Pending or DownloadStatus.Cancelling;
+        }
+
+        return false;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, string language) =>

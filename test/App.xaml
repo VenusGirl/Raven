@@ -21,6 +21,7 @@
             <helper:NotDownloadingStatusToVisibilityConverter x:Key="NotDownloadingStatusToVisibilityConverter" />
             <helper:InstallingStatusToVisibilityConverter x:Key="InstallingStatusToVisibilityConverter" />
             <helper:DownloadStatusToTextConverter x:Key="DownloadStatusToTextConverter" />
+            <helper:DownloadStatusToIndeterminateConverter x:Key="DownloadStatusToIndeterminateConverter" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

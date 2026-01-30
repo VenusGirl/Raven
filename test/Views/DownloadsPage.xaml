@@ -144,6 +144,7 @@
                     </Grid>
                     <ProgressBar
                       Maximum="100"
+                      IsIndeterminate="{Binding Status, Converter={StaticResource DownloadStatusToIndeterminateConverter}, Mode=OneWay}"
                       Value="{Binding Progress, Mode=OneWay}"
                     />
                   </StackPanel>

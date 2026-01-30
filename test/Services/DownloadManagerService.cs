@@ -160,7 +160,8 @@ public class DownloadManagerService
             }
         }
 
-        UpdateDownloadStatus(productId, DownloadStatus.Cancelled);
+        UpdateDownloadStatusText(productId, "Cancelling");
+        UpdateDownloadStatus(productId, DownloadStatus.Cancelling);
     }
 
     public bool IsCancellationRequested(string productId)
@@ -300,6 +301,10 @@ public class DownloadManagerService
                 {
                     item.StatusTextOverride = null;
                 }
+                else if (status == DownloadStatus.Cancelling)
+                {
+                    item.StatusTextOverride = null;
+                }
             }
 
             if (IsAnyoneObserving)
@@ -332,6 +337,7 @@ public class DownloadManagerService
                     item.Status == DownloadStatus.Downloading
                     || item.Status == DownloadStatus.Pending
                     || item.Status == DownloadStatus.Installing
+                    || item.Status == DownloadStatus.Cancelling
                 );
         }
     }
@@ -355,6 +361,7 @@ public class DownloadManagerService
                         if (
                             item.Status == DownloadStatus.Downloading
                             || item.Status == DownloadStatus.Pending
+                            || item.Status == DownloadStatus.Cancelling
                         )
                         {
                             item.Status = DownloadStatus.Cancelled;

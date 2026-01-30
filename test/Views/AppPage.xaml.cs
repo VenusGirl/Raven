@@ -1,6 +1,4 @@
 ﻿using System.Diagnostics;
-using System.Runtime.InteropServices;
-using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
@@ -127,11 +125,7 @@ public sealed partial class AppPage : Page
         var downloadManager = DownloadManagerService.Instance;
         var downloadItem = downloadManager.GetDownload(productId);
 
-        if (isInstalled || downloadManager.IsDownloaded(productId))
-        {
-            SetInstallButtonState(content: "Installed", enabled: false, showProgress: false);
-        }
-        else if (downloadManager.HasActiveDownload(productId))
+        if (downloadManager.HasActiveDownload(productId))
         {
             SetInstallButtonState(showProgress: true);
             if (downloadItem != null)
@@ -139,7 +133,12 @@ public sealed partial class AppPage : Page
                 // Bind to the active download item for progress updates
                 _activeDownloadItem = downloadItem;
                 BindToDownloadItem(downloadItem);
+                UpdateProgressIndeterminate(downloadItem.Status);
             }
+        }
+        else if (isInstalled)
+        {
+            SetInstallButtonState(content: "Re-install", enabled: true, showProgress: false);
         }
         else if (downloadItem is { Status: DownloadStatus.Cancelled or DownloadStatus.Failed })
         {
@@ -156,6 +155,7 @@ public sealed partial class AppPage : Page
         UpdateService.SetProgress(item.Progress);
         StatusText.Text = item.StatusText;
         DetailsText.Text = item.DisplayDetailsText;
+        UpdateProgressIndeterminate(item.Status);
 
         // Subscribe to property changes for download item
         item.PropertyChanged += OnDownloadItemPropertyChanged;
@@ -217,6 +217,7 @@ public sealed partial class AppPage : Page
             case nameof(DownloadItem.Progress):
                 // Keep progress in sync with the bound UpdateService.
                 UpdateService.SetProgress(item.Progress);
+                SetProgressIndeterminate(false);
                 break;
 
             case nameof(DownloadItem.DisplayDetailsText):
@@ -242,24 +243,17 @@ public sealed partial class AppPage : Page
                     DetailsText.Text = string.Empty;
                 }
 
+                UpdateProgressIndeterminate(item.Status);
+
                 if (item.Status == DownloadStatus.Completed)
                 {
                     UnbindFromDownloadItem();
-                    SetInstallButtonState(
-                        content: "Installed",
-                        enabled: false,
-                        showProgress: false
-                    );
+                    UpdateInstallButtonState();
                 }
                 else if (item.Status is DownloadStatus.Cancelled or DownloadStatus.Failed)
                 {
                     UnbindFromDownloadItem();
-                    var isInstalled = IsPackageInstalled(_currentProductInfo?.PackageFamilyName);
-                    SetInstallButtonState(
-                        content: isInstalled ? "Installed" : "Retry",
-                        enabled: !isInstalled,
-                        showProgress: false
-                    );
+                    UpdateInstallButtonState();
                 }
                 break;
         }
@@ -298,6 +292,9 @@ public sealed partial class AppPage : Page
         InstallButton.IsEnabled = enabled;
         InstallButton.Visibility = showProgress ? Visibility.Collapsed : Visibility.Visible;
         ProgressSection.Visibility = showProgress ? Visibility.Visible : Visibility.Collapsed;
+
+        if (!showProgress)
+            SetProgressIndeterminate(false);
 
         InstallButton.Background = enabled
             ? (Microsoft.UI.Xaml.Media.Brush)
@@ -405,6 +402,7 @@ public sealed partial class AppPage : Page
             UpdateService.SetProgress(0);
 
             // Show fetch phase on both AppPage and DownloadsPage
+            SetProgressIndeterminate(true);
             UpdateService.StartStatusAnimation("Fetching download URLs");
             downloadManager.UpdateDownloadStatus(productId, DownloadStatus.Pending);
             downloadManager.UpdateDownloadProgress(productId, 0);
@@ -475,6 +473,8 @@ public sealed partial class AppPage : Page
                 fetchAnimator.Stop(downloadItem);
             }
 
+            SetProgressIndeterminate(false);
+
             await DownloadHelper.StartDownloadAsync(urls, productId, _cts.Token, UpdateService);
 
             downloadManager.UnregisterCancellationToken(productId);
@@ -483,12 +483,11 @@ public sealed partial class AppPage : Page
 
             var currentItem = downloadManager.GetDownload(productId);
             if (
-                downloadManager.IsDownloaded(productId)
-                || currentItem?.Status == DownloadStatus.Completed
+                currentItem?.Status == DownloadStatus.Completed
             )
             {
                 UnbindFromDownloadItem();
-                SetInstallButtonState(content: "Installed", enabled: false, showProgress: false);
+                UpdateInstallButtonState();
                 return;
             }
 
@@ -529,11 +528,21 @@ public sealed partial class AppPage : Page
         var productId = _currentProductInfo.ProductId;
 
         // Show cancelling animation on the main status line
+        SetProgressIndeterminate(true);
         UpdateService.StartStatusAnimation("Cancelling");
 
         // Cancel via manager so it works consistently across pages/phases.
         DownloadManagerService.Instance.CancelDownload(productId);
 
         StopButton.IsEnabled = false;
+    }
+    private void UpdateProgressIndeterminate(DownloadStatus status)
+    {
+        SetProgressIndeterminate(status is DownloadStatus.Pending or DownloadStatus.Cancelling);
+    }
+
+    private void SetProgressIndeterminate(bool isIndeterminate)
+    {
+        ProgressBar.IsIndeterminate = isIndeterminate;
     }
 }

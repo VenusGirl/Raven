@@ -12,6 +12,7 @@ public enum DownloadStatus
     Installing,
     Completed,
     Failed,
+    Cancelling,
     Cancelled,
 }
 
@@ -193,6 +194,9 @@ public partial class DownloadItem : INotifyPropertyChanged
             DownloadStatus.Installing => !string.IsNullOrWhiteSpace(StatusTextOverride)
                 ? StatusTextOverride
                 : "Installing",
+            DownloadStatus.Cancelling => !string.IsNullOrWhiteSpace(StatusTextOverride)
+                ? StatusTextOverride
+                : "Cancelling",
             DownloadStatus.Completed => "Completed",
             DownloadStatus.Failed => "Failed",
             DownloadStatus.Cancelled => "Cancelled",
