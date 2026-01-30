@@ -13,6 +13,7 @@ public sealed partial class DownloadsPage : Page
 {
     public DownloadsViewModel ViewModel { get; }
     private readonly INavigationService _navigationService;
+    private test.Helpers.DownloadItemStatusAnimator? _animator;
 
     public DownloadsPage()
     {
@@ -25,12 +26,46 @@ public sealed partial class DownloadsPage : Page
     {
         base.OnNavigatedTo(e);
         DownloadManagerService.Instance.BeginObserving();
+
+        _animator ??= new test.Helpers.DownloadItemStatusAnimator(this.DispatcherQueue);
+
+        // When navigating between pages, the per-download animator instances used during download/install
+        // may get GC'ed. Restart animations for any active items so the Downloads list doesn't look stuck.
+        foreach (var item in ViewModel.Downloads)
+        {
+            switch (item.Status)
+            {
+                case DownloadStatus.Pending:
+                    _animator.Start(item, "Fetching download URLs");
+                    break;
+                case DownloadStatus.Downloading:
+                    _animator.Start(item, "Downloading");
+                    break;
+                case DownloadStatus.Installing:
+                    _animator.Start(item, "Installing");
+                    break;
+                case DownloadStatus.Cancelling:
+                    _animator.Start(item, "Cancelling");
+                    break;
+                default:
+                    _animator.Stop(item);
+                    break;
+            }
+        }
     }
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
         base.OnNavigatedFrom(e);
         DownloadManagerService.Instance.EndObserving();
+
+        if (_animator != null)
+        {
+            foreach (var item in ViewModel.Downloads)
+            {
+                _animator.Stop(item);
+            }
+        }
     }
 
     private void DownloadsList_ItemClick(object sender, ItemClickEventArgs e)

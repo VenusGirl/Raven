@@ -538,7 +538,7 @@ public sealed class DownloadHelper
             }
             else
             {
-                downloadManager.UpdateDownloadStatusText(productId, "Install canceled.");
+                downloadManager.UpdateDownloadStatusText(productId, null);
                 downloadManager.UpdateDownloadStatus(productId, test.Models.DownloadStatus.Cancelled);
             }
         }

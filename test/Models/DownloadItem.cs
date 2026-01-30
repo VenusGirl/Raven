@@ -7,13 +7,13 @@ namespace test.Models;
 
 public enum DownloadStatus
 {
-    Pending,
-    Downloading,
-    Installing,
-    Completed,
-    Failed,
-    Cancelling,
-    Cancelled,
+    Pending = 0,
+    Downloading = 1,
+    Installing = 2,
+    Failed = 4,
+    Cancelling = 5,
+    Cancelled = 6,
+    Completed = 7,
 }
 
 public partial class DownloadItem : INotifyPropertyChanged
@@ -27,6 +27,20 @@ public partial class DownloadItem : INotifyPropertyChanged
             if (_productId != value)
             {
                 _productId = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    private string? _revisionId;
+    public string? RevisionId
+    {
+        get => _revisionId;
+        set
+        {
+            if (_revisionId != value)
+            {
+                _revisionId = value;
                 OnPropertyChanged();
             }
         }
@@ -144,6 +158,25 @@ public partial class DownloadItem : INotifyPropertyChanged
 
     private List<string> _downloadedFilePaths = [];
 
+    private bool _hasValidCache;
+
+    /// <summary>
+    /// True when we have a verified on-disk cache for this item (download completed).
+    /// This persists even if the install later fails or is cancelled.
+    /// </summary>
+    public bool HasValidCache
+    {
+        get => _hasValidCache;
+        set
+        {
+            if (_hasValidCache != value)
+            {
+                _hasValidCache = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
     /// <summary>
     /// List of file paths that were downloaded for this item
     /// </summary>
@@ -194,10 +227,10 @@ public partial class DownloadItem : INotifyPropertyChanged
             DownloadStatus.Installing => !string.IsNullOrWhiteSpace(StatusTextOverride)
                 ? StatusTextOverride
                 : "Installing",
+            DownloadStatus.Completed => "Completed",
             DownloadStatus.Cancelling => !string.IsNullOrWhiteSpace(StatusTextOverride)
                 ? StatusTextOverride
                 : "Cancelling",
-            DownloadStatus.Completed => "Completed",
             DownloadStatus.Failed => "Failed",
             DownloadStatus.Cancelled => "Cancelled",
             _ => "Unknown",

@@ -56,6 +56,9 @@ public sealed partial class AppPage : Page
         {
             await FetchAndLoadProductAsync(productId);
         }
+
+        // Always update button state in case navigating back to an active install
+        UpdateInstallButtonState();
     }
 
     private void LoadProduct(StoreEdgeFDProduct productInfo)
@@ -74,6 +77,14 @@ public sealed partial class AppPage : Page
             productInfo.RatingCount,
             productInfo.Size
         );
+
+        var downloadManager = DownloadManagerService.Instance;
+        var downloadItem = downloadManager.GetDownload(productInfo.ProductId);
+        if (downloadItem != null)
+        {
+            downloadItem.ProductInfo = productInfo;
+            downloadManager.UpdateDownloadRevision(productInfo.ProductId, productInfo.RevisionId);
+        }
         SetLoading(false);
         UpdateInstallButtonState();
     }
@@ -124,6 +135,7 @@ public sealed partial class AppPage : Page
         var isInstalled = IsPackageInstalled(_currentProductInfo.PackageFamilyName);
         var downloadManager = DownloadManagerService.Instance;
         var downloadItem = downloadManager.GetDownload(productId);
+        var isUpdateAvailable = IsUpdateAvailable(downloadItem);
 
         if (downloadManager.HasActiveDownload(productId))
         {
@@ -138,12 +150,111 @@ public sealed partial class AppPage : Page
         }
         else if (isInstalled)
         {
-            SetInstallButtonState(content: "Re-install", enabled: true, showProgress: false);
+            var content = isUpdateAvailable ? "Update" : "Open";
+            SetInstallButtonState(content: content, enabled: true, showProgress: false);
         }
-        else if (downloadItem is { Status: DownloadStatus.Cancelled or DownloadStatus.Failed })
+        // Only show Retry when the last action itself failed/cancelled.
+        // If the user simply uninstalled the app, show Install.
+        else if (downloadItem is { Status: DownloadStatus.Cancelled or DownloadStatus.Failed } && !isInstalled)
         {
             SetInstallButtonState(content: "Retry", enabled: true, showProgress: false);
         }
+        else
+        {
+            SetInstallButtonState(content: "Install", enabled: true, showProgress: false);
+        }
+    }
+
+    private bool IsUpdateAvailable(DownloadItem? downloadItem)
+    {
+        if (_currentProductInfo == null)
+            return false;
+
+        // Only show "Update" for installed apps when:
+        // - We can parse the Store revision date (RevisionId)
+        // - We can determine the install timestamp
+        // - Installed timestamp is older than the Store revision date
+        if (!TryParseStoreRevisionUtc(_currentProductInfo.RevisionId, out var storeRevisionUtc))
+            return false;
+
+        var installedUtc = GetInstalledUtc(_currentProductInfo.PackageFamilyName);
+        if (installedUtc == null)
+            return false;
+
+        return installedUtc.Value < storeRevisionUtc;
+    }
+
+    private static bool TryParseStoreRevisionUtc(string? revisionId, out DateTimeOffset revisionUtc)
+    {
+        revisionUtc = default;
+        if (string.IsNullOrWhiteSpace(revisionId))
+            return false;
+
+        return DateTimeOffset.TryParse(
+            revisionId,
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AssumeUniversal
+                | System.Globalization.DateTimeStyles.AdjustToUniversal,
+            out revisionUtc
+        );
+    }
+
+    private static DateTimeOffset? GetInstalledUtc(string? packageFamilyName)
+    {
+        if (string.IsNullOrWhiteSpace(packageFamilyName))
+            return null;
+
+        try
+        {
+            var pm = new PackageManager();
+            var pkg = pm.FindPackagesForUser(string.Empty, packageFamilyName).FirstOrDefault();
+            var path = pkg?.InstalledLocation?.Path;
+            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+                return null;
+
+            var creationUtc = Directory.GetCreationTimeUtc(path);
+            return new DateTimeOffset(creationUtc, TimeSpan.Zero);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task<bool> TryLaunchInstalledAppAsync(string? packageFamilyName)
+    {
+        if (string.IsNullOrWhiteSpace(packageFamilyName))
+            return false;
+
+        try
+        {
+            var pm = new PackageManager();
+            var pkg = pm.FindPackagesForUser(string.Empty, packageFamilyName).FirstOrDefault();
+            if (pkg == null)
+                return false;
+
+            var entries = await pkg.GetAppListEntriesAsync();
+            var entry = entries.FirstOrDefault();
+            if (entry == null)
+                return false;
+
+            await entry.LaunchAsync();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine(ex);
+            return false;
+        }
+    }
+
+    private bool IsDownloadUpToDate(DownloadItem downloadItem)
+    {
+        var currentRevision = _currentProductInfo?.RevisionId;
+        if (string.IsNullOrWhiteSpace(currentRevision) || downloadItem.RevisionId == null)
+            return false;
+
+        return string.Equals(downloadItem.RevisionId, currentRevision, StringComparison.OrdinalIgnoreCase);
     }
 
     private void BindToDownloadItem(DownloadItem item)
@@ -151,11 +262,31 @@ public sealed partial class AppPage : Page
         // Mark that we're observing downloads
         DownloadManagerService.Instance.BeginObserving();
 
-        // Set initial values directly - same approach as Downloads page
-        UpdateService.SetProgress(item.Progress);
+        // Reset and then set initial values directly.
+        // This avoids stale UI when reusing the same DownloadItem for a Retry where
+        // progress may restart at 0 but not fire PropertyChanged (1% increment logic).
+        UpdateService.StopStatusAnimation();
+        UpdateService.SetDetails(string.Empty);
+        // Do not set UpdateService.SetProgress here; it will be set explicitly after binding
+
         StatusText.Text = item.StatusText;
-        DetailsText.Text = item.DisplayDetailsText;
+        DetailsText.Text = string.IsNullOrWhiteSpace(item.DisplayDetailsText)
+            ? string.Empty
+            : item.DisplayDetailsText;
+        // For installing status, DetailsText should show progress percentage
+        if (item.Status == DownloadStatus.Installing)
+        {
+            DetailsText.Text = $"{(int)Math.Round(item.Progress)}%";
+        }
+        // Sync progress bar to current value
+        UpdateService.SetProgress(item.Progress);
         UpdateProgressIndeterminate(item.Status);
+
+        // Restart animation if installing
+        if (item.Status == DownloadStatus.Installing)
+        {
+            UpdateService.StartStatusAnimation("Installing");
+        }
 
         // Subscribe to property changes for download item
         item.PropertyChanged += OnDownloadItemPropertyChanged;
@@ -218,6 +349,11 @@ public sealed partial class AppPage : Page
                 // Keep progress in sync with the bound UpdateService.
                 UpdateService.SetProgress(item.Progress);
                 SetProgressIndeterminate(false);
+                // Update DetailsText during install progress changes
+                if (item.Status == DownloadStatus.Installing)
+                {
+                    DetailsText.Text = $"{(int)Math.Round(item.Progress)}%";
+                }
                 break;
 
             case nameof(DownloadItem.DisplayDetailsText):
@@ -245,13 +381,17 @@ public sealed partial class AppPage : Page
 
                 UpdateProgressIndeterminate(item.Status);
 
-                if (item.Status == DownloadStatus.Completed)
+                if (item.Status is DownloadStatus.Completed)
                 {
+                    UpdateService.StopStatusAnimation();
+                    StatusText.Text = item.StatusText;
                     UnbindFromDownloadItem();
                     UpdateInstallButtonState();
                 }
                 else if (item.Status is DownloadStatus.Cancelled or DownloadStatus.Failed)
                 {
+                    UpdateService.StopStatusAnimation();
+                    StatusText.Text = item.StatusText;
                     UnbindFromDownloadItem();
                     UpdateInstallButtonState();
                 }
@@ -356,16 +496,78 @@ public sealed partial class AppPage : Page
             return;
 
         var productId = _currentProductInfo.ProductId;
+
+        // If the button is currently acting as "Open", don't ever start install/download.
+        // If the user uninstalled the app while staying on this page, just refresh the UI to "Install".
+        if (string.Equals(InstallButton.Content?.ToString(), "Open", StringComparison.OrdinalIgnoreCase))
+        {
+            if (IsPackageInstalled(_currentProductInfo.PackageFamilyName))
+            {
+                await TryLaunchInstalledAppAsync(_currentProductInfo.PackageFamilyName);
+            }
+            else
+            {
+                UpdateInstallButtonState();
+            }
+
+            return;
+        }
+
         var downloadManager = DownloadManagerService.Instance;
+        var existingDownload = downloadManager.GetDownload(productId);
+        UpdateService.SetDetails(string.Empty);
+        DetailsText.Text = string.Empty;
+        var cacheCandidate = existingDownload;
+        if (!string.IsNullOrWhiteSpace(_currentProductInfo.RevisionId))
+        {
+            downloadManager.UpdateDownloadRevision(productId, _currentProductInfo.RevisionId);
+        }
 
         try
         {
+            // Always prefer using the on-disk cache when it's up-to-date.
+            // This should work even if the current status is Failed/Cancelled after an install attempt.
+            if (cacheCandidate != null
+                && cacheCandidate.HasValidCache
+                && IsDownloadUpToDate(cacheCandidate))
+            {
+                cacheCandidate.ProductInfo = _currentProductInfo;
+                _cts?.Cancel();
+                _cts?.Dispose();
+                _cts = new CancellationTokenSource();
+                StopButton.IsEnabled = true;
+
+                downloadManager.RegisterCancellationToken(productId, _cts);
+
+                if (
+                    downloadManager.IsCancellationRequested(productId)
+                    || _cts.Token.IsCancellationRequested
+                )
+                {
+                    HandleDownloadError(productId, "Operation canceled.", DownloadStatus.Cancelled);
+                    return;
+                }
+
+                SetInstallButtonState(showProgress: true);
+                var installedFromCache = await TryInstallFromCachedDownloadAsync(cacheCandidate, _cts.Token);
+
+                downloadManager.UnregisterCancellationToken(productId);
+                StopButton.IsEnabled = false;
+
+                if (installedFromCache)
+                {
+                    UpdateInstallButtonState();
+                    return;
+                }
+            }
+
             SetInstallButtonState(showProgress: true);
 
-            var existingDownload = downloadManager.GetDownload(productId);
-            if (existingDownload is { Status: DownloadStatus.Cancelled or DownloadStatus.Failed })
+            // Only remove cached downloads when the cache is outdated.
+            if (existingDownload is { Status: DownloadStatus.Completed } && !IsDownloadUpToDate(existingDownload))
             {
                 downloadManager.RemoveDownload(productId);
+                existingDownload = null;
             }
 
             downloadManager.AddDownload(_currentProductInfo);
@@ -482,9 +684,7 @@ public sealed partial class AppPage : Page
             StopButton.IsEnabled = false;
 
             var currentItem = downloadManager.GetDownload(productId);
-            if (
-                currentItem?.Status == DownloadStatus.Completed
-            )
+            if (currentItem?.Status == DownloadStatus.Completed)
             {
                 UnbindFromDownloadItem();
                 UpdateInstallButtonState();
@@ -508,6 +708,106 @@ public sealed partial class AppPage : Page
             Debug.WriteLine(ex);
             UpdateService.StopStatusAnimation();
             HandleDownloadError(productId, "Failed to install.", DownloadStatus.Failed);
+        }
+    }
+
+    private async Task<bool> TryInstallFromCachedDownloadAsync(
+        DownloadItem downloadItem,
+        CancellationToken token
+    )
+    {
+        var existingFiles = downloadItem
+            .DownloadedFilePaths
+            .Where(p => !string.IsNullOrWhiteSpace(p) && File.Exists(p))
+            .ToList();
+
+        if (existingFiles.Count == 0)
+            return false;
+
+        var mainPackagePath = PickMainPackage(existingFiles);
+        if (string.IsNullOrWhiteSpace(mainPackagePath) || !File.Exists(mainPackagePath))
+            return false;
+
+        var depPaths = existingFiles
+            .Where(p => !string.Equals(p, mainPackagePath, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        SetInstallButtonState(showProgress: true);
+
+        _activeDownloadItem = downloadItem;
+        BindToDownloadItem(downloadItem);
+
+        UpdateService.SetProgress(0);
+        UpdateService.SetDetails(string.Empty);
+        DetailsText.Text = string.Empty;
+        SetProgressIndeterminate(false);
+
+        var downloadManager = DownloadManagerService.Instance;
+        var productId = downloadItem.ProductId;
+
+        downloadManager.UpdateDownloadStatus(productId, DownloadStatus.Installing);
+        downloadManager.UpdateDownloadProgress(productId, 0);
+        downloadManager.UpdateDownloadStatusText(productId, "Installing");
+        downloadManager.UpdateDownloadDetailsText(productId, string.Empty);
+        downloadManager.UpdateDownloadBytes(productId, null, null);
+        UpdateService.StartStatusAnimation("Installing");
+
+        try
+        {
+            int lastInstallPercent = -1;
+            long lastInstallProgressMs = 0;
+            const int INSTALL_PROGRESS_THROTTLE_MS = 100;
+
+            var installProgress = new Progress<AppPackageInstaller.InstallProgress>(p =>
+            {
+                var percent = (int)Math.Clamp(p.Percent, 0, 100);
+                var now = Environment.TickCount64;
+                if (percent != 100 && percent == lastInstallPercent)
+                    return;
+                if (percent != 100 && now - lastInstallProgressMs < INSTALL_PROGRESS_THROTTLE_MS)
+                    return;
+
+                lastInstallPercent = percent;
+                lastInstallProgressMs = now;
+
+                downloadManager.UpdateDownloadProgress(productId, percent);
+            });
+
+            await AppPackageInstaller.InstallAsync(
+                mainPackagePath,
+                dependencyPackagePaths: depPaths,
+                progress: installProgress,
+                cancellationToken: token
+            );
+
+            UpdateService.StopStatusAnimation();
+            downloadManager.UpdateDownloadStatusText(productId, null);
+            downloadManager.UpdateDownloadStatus(productId, DownloadStatus.Completed);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            UpdateService.StopStatusAnimation();
+            var packageFamilyName = downloadItem.ProductInfo?.PackageFamilyName
+                ?? _currentProductInfo?.PackageFamilyName;
+            if (IsPackageInstalled(packageFamilyName))
+            {
+                downloadManager.UpdateDownloadStatusText(productId, null);
+                downloadManager.UpdateDownloadStatus(productId, DownloadStatus.Completed);
+            }
+            else
+            {
+                downloadManager.UpdateDownloadStatusText(productId, null);
+                downloadManager.UpdateDownloadStatus(productId, DownloadStatus.Cancelled);
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            UpdateService.StopStatusAnimation();
+            downloadManager.UpdateDownloadStatusText(productId, $"Install failed: {ex.Message}");
+            downloadManager.UpdateDownloadStatus(productId, DownloadStatus.Failed);
+            return true;
         }
     }
 

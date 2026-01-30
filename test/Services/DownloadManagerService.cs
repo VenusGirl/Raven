@@ -100,6 +100,7 @@ public class DownloadManagerService
                 Title = productInfo.Title,
                 LogoUrl = productInfo.Logo?.Url,
                 PublisherName = productInfo.PublisherName,
+                RevisionId = productInfo.RevisionId,
                 Status = DownloadStatus.Downloading,
                 StartedAt = DateTime.Now,
                 ProductInfo = productInfo,
@@ -144,6 +145,60 @@ public class DownloadManagerService
             return;
         }
 
+        // Cancelling during the install phase should not immediately force the final state.
+        // Near 100% the install may still complete; let the install operation determine
+        // whether the app ended up installed (Completed) or not (Cancelled).
+        if (item?.Status is DownloadStatus.Installing)
+        {
+            // Best-effort cancel if an install is in progress.
+            if (_cancellationTokens.TryGetValue(productId, out var installCts))
+            {
+                try
+                {
+                    installCts.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // ignore
+                }
+            }
+
+            // Clear any remembered cancellation request so future installs/downloads are not auto-cancelled.
+            _cancellationRequested.TryRemove(productId, out _);
+
+            UpdateDownloadDetailsText(productId, string.Empty);
+            // Keep status as Installing; the install operation will finalize to Completed or Cancelled.
+            UpdateDownloadStatusText(productId, "Cancelling");
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(1500).ConfigureAwait(false);
+                    var current = GetDownload(productId);
+                    if (current is { Status: DownloadStatus.Installing })
+                    {
+                        RunOnUIThread(() =>
+                        {
+                            if (current.Status == DownloadStatus.Installing)
+                                current.StatusTextOverride = null;
+                        });
+                    }
+                }
+                catch
+                {
+                    // ignore
+                }
+            });
+            return;
+        }
+
+        if (item?.Status is DownloadStatus.Completed)
+        {
+            // Not an active operation; keep it as completed.
+            return;
+        }
+
         // Always remember the request so phases that haven't registered CTS yet
         // (URL fetch, install) still get cancelled.
         _cancellationRequested[productId] = true;
@@ -158,6 +213,17 @@ public class DownloadManagerService
             {
                 // Token already disposed
             }
+        }
+
+        if (
+            item?.Status == DownloadStatus.Installing
+            || item?.Status == DownloadStatus.Completed
+            || (item?.Status == DownloadStatus.Cancelling && item.DownloadedFilePaths.Count > 0)
+        )
+        {
+            UpdateDownloadStatusText(productId, null);
+            UpdateDownloadStatus(productId, DownloadStatus.Completed);
+            return;
         }
 
         UpdateDownloadStatusText(productId, "Cancelling");
@@ -187,6 +253,27 @@ public class DownloadManagerService
         {
             return Downloads.FirstOrDefault(d => d.ProductId == productId);
         }
+    }
+
+    public void UpdateDownloadRevision(string productId, string? revisionId)
+    {
+        if (string.IsNullOrWhiteSpace(revisionId))
+            return;
+
+        var item = GetDownload(productId);
+        if (item == null || string.Equals(item.RevisionId, revisionId, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (IsAnyoneObserving)
+        {
+            RunOnUIThread(() => item.RevisionId = revisionId);
+        }
+        else
+        {
+            item.RevisionId = revisionId;
+        }
+
+        SaveDownloads();
     }
 
 
@@ -280,9 +367,10 @@ public class DownloadManagerService
             void ApplyStatus()
             {
                 item.Status = status;
-                if (status == DownloadStatus.Completed)
+                if (status is DownloadStatus.Completed)
                 {
                     item.CompletedAt = DateTime.Now;
+                    item.HasValidCache = true;
                     if (IsAnyoneObserving)
                     {
                         item.Progress = 100;
@@ -297,13 +385,18 @@ public class DownloadManagerService
                         DownloadedProductIds.Add(productId);
                     }
                 }
-                else if (status is DownloadStatus.Cancelled or DownloadStatus.Failed)
+                else if (status is DownloadStatus.Cancelled or DownloadStatus.Failed or DownloadStatus.Completed)
                 {
                     item.StatusTextOverride = null;
                 }
                 else if (status == DownloadStatus.Cancelling)
                 {
                     item.StatusTextOverride = null;
+                }
+                else if (status == DownloadStatus.Installing)
+                {
+                    // Installing implies download phase completed and files should be available on disk.
+                    item.HasValidCache = item.DownloadedFilePaths.Count > 0;
                 }
             }
 
@@ -356,18 +449,51 @@ public class DownloadManagerService
                     DownloadedProductIds.Clear();
                     foreach (var item in items)
                     {
+                        // Migrate legacy states.
+                        // - Older builds used "Downloaded" for "files present on disk".
+                        // - Some builds used "Completed".
+                        var statusText = item.Status.ToString();
+                        if (statusText.Equals("Downloaded", StringComparison.OrdinalIgnoreCase)
+                            || statusText.Equals("Completed", StringComparison.OrdinalIgnoreCase))
+                        {
+                            item.Status = DownloadStatus.Completed;
+                        }
+
+                        // Infer cache presence if it wasn't persisted in older versions.
+                        if (!item.HasValidCache)
+                        {
+                            item.HasValidCache = item.Status == DownloadStatus.Completed
+                                || item.DownloadedFilePaths.Count > 0;
+                        }
+
                         // Reset any "Downloading" status to "Cancelled" on app restart
                         // since the download won't continue
                         if (
                             item.Status == DownloadStatus.Downloading
                             || item.Status == DownloadStatus.Pending
-                            || item.Status == DownloadStatus.Cancelling
                         )
                         {
                             item.Status = DownloadStatus.Cancelled;
                         }
+                        else if (
+                            item.Status == DownloadStatus.Cancelling
+                            && item.DownloadedFilePaths.Count > 0
+                        )
+                        {
+                            item.Status = DownloadStatus.Completed;
+                        }
+                        else if (item.Status == DownloadStatus.Cancelling)
+                        {
+                            item.Status = DownloadStatus.Cancelled;
+                        }
+                        else if (item.Status == DownloadStatus.Installing)
+                        {
+                            item.Status = item.DownloadedFilePaths.Count > 0
+                                ? DownloadStatus.Completed
+                                : DownloadStatus.Cancelled;
+                        }
                         Downloads.Add(item);
-                        if (item.Status == DownloadStatus.Completed)
+                        if (item.Status is DownloadStatus.Completed)
                         {
                             DownloadedProductIds.Add(item.ProductId);
                         }

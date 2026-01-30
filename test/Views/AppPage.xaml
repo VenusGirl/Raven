@@ -97,7 +97,7 @@
             />
           </Grid>
         </StackPanel>
-        <!--  install button  -->
+        <!--  install/open/update button  -->
         <Button
           x:Name="InstallButton"
           Width="120"
