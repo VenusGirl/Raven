@@ -153,13 +153,9 @@ public sealed partial class AppPage : Page
 
         var productId = _currentProductInfo.ProductId;
         var isUnpackaged = _currentProductInfo.InstallerType == InstallerType.Unpackaged;
-        var isInstalled = !isUnpackaged
-            && PackagedAppDiscovery.IsInstalled(_currentProductInfo.PackageFamilyName);
-        var win32KeyName = _currentProductInfo.PackageFamilyName;
-        var win32Info = isUnpackaged
-            ? Win32AppDiscovery.GetInstalledInfo(_currentProductInfo.Title)
-            : null;
-        var isUnpackagedInstalled = isUnpackaged && win32Info?.IsInstalled == true;
+        var isInstalled = isUnpackaged
+            ? IsUnpackagedInstalled(_currentProductInfo)
+            : IsPackagedInstalled(_currentProductInfo);
         var downloadManager = DownloadManagerService.Instance;
         var downloadItem = downloadManager.GetDownload(productId);
         var isUpdateAvailable = IsUpdateAvailable(downloadItem);
@@ -175,11 +171,11 @@ public sealed partial class AppPage : Page
                 UpdateProgressIndeterminate(downloadItem.Status);
             }
         }
-        else if (isInstalled || isUnpackagedInstalled)
+        else if (isInstalled)
         {
-            var shouldShowUpdate = isInstalled
-                ? isUpdateAvailable
-                : IsUnpackagedUpdateAvailable(downloadItem);
+            var shouldShowUpdate = isUnpackaged
+                ? IsUnpackagedUpdateAvailable(downloadItem)
+                : isUpdateAvailable;
 
             var content = shouldShowUpdate ? "Update" : "Open";
             SetInstallButtonState(content: content, enabled: true, showProgress: false);
@@ -195,6 +191,12 @@ public sealed partial class AppPage : Page
             SetInstallButtonState(content: "Install", enabled: true, showProgress: false);
         }
     }
+
+    private static bool IsPackagedInstalled(StoreEdgeFDProduct product) =>
+        PackagedAppDiscovery.IsInstalled(product.PackageFamilyName);
+
+    private static bool IsUnpackagedInstalled(StoreEdgeFDProduct product) =>
+        Win32AppDiscovery.GetInstalledInfo(product.Title).IsInstalled;
 
     private bool IsUnpackagedUpdateAvailable(DownloadItem? downloadItem)
     {
@@ -536,34 +538,7 @@ public sealed partial class AppPage : Page
         // If the user uninstalled the app while staying on this page, just refresh the UI to "Install".
         if (string.Equals(action, "Open", StringComparison.OrdinalIgnoreCase))
         {
-            if (!isUnpackaged)
-            {
-                await PackagedAppDiscovery.TryLaunchAsync(_currentProductInfo.PackageFamilyName);
-                return;
-            }
-
-            var launch = await Win32AppDiscovery.TryLaunchDetailedAsync(_currentProductInfo.Title);
-            if (!launch.Success)
-            {
-                var title = "Unable to open app";
-                var msg = launch.FailureReason switch
-                {
-                    Win32AppDiscovery.LaunchFailureReason.NotFoundInRegistry =>
-                        "This app was not found in the Windows uninstall registry. It may not be installed.",
-                    Win32AppDiscovery.LaunchFailureReason.MissingLaunchTarget =>
-                        "The app appears to be installed, but a launch target couldn't be found (Start Menu/DisplayIcon). The app may have been installed incorrectly.",
-                    Win32AppDiscovery.LaunchFailureReason.LaunchTargetNotFoundOnDisk =>
-                        "The app appears to be installed, but its launch file couldn't be found on disk. The app may have been moved or installed incorrectly.",
-                    _ => "The app couldn't be opened. Try reinstalling the app.",
-                };
-
-                if (!string.IsNullOrWhiteSpace(launch.InstalledVersion))
-                {
-                    msg += $"\n\nInstalled version: {launch.InstalledVersion}";
-                }
-
-                await ShowErrorDialogAsync(title, msg);
-            }
+            await TryOpenCurrentAppAsync();
             return;
         }
 
@@ -774,6 +749,63 @@ public sealed partial class AppPage : Page
         finally
         {
             UpdateInstallButtonState();
+        }
+    }
+
+    private async Task TryOpenCurrentAppAsync()
+    {
+        if (_currentProductInfo == null)
+            return;
+
+        if (_currentProductInfo.InstallerType != InstallerType.Unpackaged)
+        {
+            var launch = await PackagedAppDiscovery.TryLaunchDetailedAsync(
+                _currentProductInfo.PackageFamilyName
+            );
+
+            if (!launch.Success)
+            {
+                var msg = launch.FailureReason switch
+                {
+                    PackagedAppDiscovery.LaunchFailureReason.NotInstalled =>
+                        "This app package was not found in the Windows package manager. It may not be installed.",
+                    PackagedAppDiscovery.LaunchFailureReason.NoAppEntries =>
+                        "The app package is installed, but no launchable app entries were found.",
+                    _ => "The app couldn't be opened. Try reinstalling the app.",
+                };
+
+                if (!string.IsNullOrWhiteSpace(launch.InstalledUtc))
+                {
+                    msg += $"\n\nInstalled: {launch.InstalledUtc}";
+                }
+
+                await ShowErrorDialogAsync("Unable to open app", msg);
+            }
+
+            return;
+        }
+
+        var win32Launch = await Win32AppDiscovery.TryLaunchDetailedAsync(_currentProductInfo.Title);
+        if (!win32Launch.Success)
+        {
+            var title = "Unable to open app";
+            var msg = win32Launch.FailureReason switch
+            {
+                Win32AppDiscovery.LaunchFailureReason.NotFoundInRegistry =>
+                    "This app was not found in the Windows uninstall registry. It may not be installed.",
+                Win32AppDiscovery.LaunchFailureReason.MissingLaunchTarget =>
+                    "The app appears to be installed, but a launch target couldn't be found (Start Menu/DisplayIcon). The app may have been installed incorrectly.",
+                Win32AppDiscovery.LaunchFailureReason.LaunchTargetNotFoundOnDisk =>
+                    "The app appears to be installed, but its launch file couldn't be found on disk. The app may have been moved or installed incorrectly.",
+                _ => "The app couldn't be opened. Try reinstalling the app.",
+            };
+
+            if (!string.IsNullOrWhiteSpace(win32Launch.InstalledVersion))
+            {
+                msg += $"\n\nInstalled version: {win32Launch.InstalledVersion}";
+            }
+
+            await ShowErrorDialogAsync(title, msg);
         }
     }
 
