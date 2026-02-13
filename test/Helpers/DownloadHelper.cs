@@ -128,7 +128,7 @@ public sealed class DownloadHelper
             return;
         }
 
-        var isUnpackaged = downloadItem.ProductInfo?.InstallerType == InstallerType.Unpackaged;
+        var isUnpackaged = downloadItem.InstallerType == InstallerType.Unpackaged;
 
         // Ensure the Downloads list is in the correct phase.
         // AppPage sets Status=Pending during URL fetch; once we start transferring bytes we must be Downloading.
@@ -141,6 +141,8 @@ public sealed class DownloadHelper
             appFolderName = productId;
 
         var baseDownloadDir = Path.Combine(AppContext.BaseDirectory, "downloads", appFolderName);
+        downloadManager.UpdateDownloadPath(productId, baseDownloadDir);
+
         var depsDownloadDir = Path.Combine(baseDownloadDir, "Dependencies");
 
         // Track file index/total for consistent text in DownloadItem.StatusText
@@ -707,7 +709,7 @@ public sealed class DownloadHelper
         {
             animator.Stop(downloadItem);
             updateService.StopStatusAnimation();
-            var packageFamilyName = downloadItem.ProductInfo?.PackageFamilyName;
+            var packageFamilyName = downloadItem.PackageFamilyName;
             if (IsPackageInstalled(packageFamilyName))
             {
                 downloadManager.UpdateDownloadStatusText(productId, null);

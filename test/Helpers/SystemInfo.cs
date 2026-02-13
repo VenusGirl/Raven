@@ -34,4 +34,16 @@ static class SystemInfo
             _ => "x64",
         };
     }
+
+    public static StoreEdgeFDArch GetStoreEdgeFDArch()
+    {
+        return RuntimeInformation.OSArchitecture switch
+        {
+            Architecture.X64 => StoreEdgeFDArch.X64,
+            Architecture.X86 => StoreEdgeFDArch.X86,
+            Architecture.Arm64 => StoreEdgeFDArch.ARM64,
+            Architecture.Arm => StoreEdgeFDArch.ARM,
+            _ => StoreEdgeFDArch.X86,
+        };
+    }
 }

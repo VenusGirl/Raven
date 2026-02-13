@@ -12,32 +12,51 @@ namespace test.Helpers;
 
 class Utils
 {
-    public static async Task<Product> ProductOrBundle(string productId)
+    public static async Task<Product> ProductOrBundle(
+        string productId,
+        InstallerType installerType,
+        CancellationToken cancellationToken = default
+    )
     {
-        var deviceFamily = DeviceFamily.Desktop;
         var market = Market.US;
         var language = Lang.en;
 
-        Result<StoreEdgeFDProduct> productresult = await StoreEdgeFDProduct.GetProductAsync(
-            productId,
-            deviceFamily,
-            market,
-            language
-        );
-
-        if (productresult.IsSuccess)
+        if (installerType == InstallerType.Packaged)
         {
-            if (productresult.Value.IsBundle)
+            var dcatResult = await DCATPackage.GetPackagesAsync(
+                productId,
+                market,
+                language,
+                includeNeutral: true,
+                cancellationToken
+            );
+
+            if (!dcatResult.IsSuccess)
+                throw dcatResult.Exception;
+
+            var best = dcatResult
+                .Value.Where(p => p != null)
+                .OrderByDescending(p => p.AppVersion)
+                .FirstOrDefault();
+
+            if (best == null)
+                throw new Exception("No packages found for this product.");
+
+            var productData = ProductData.FromDCAT(best);
+
+            if (best.IsBundle)
             {
-                Result<StoreEdgeFDQuery> bundlesResult = await StoreEdgeFDQuery.GetBundles(
+                var bundlesResult = await StoreEdgeFDQuery.GetBundles(
                     productId,
-                    deviceFamily,
+                    DeviceFamily.Desktop,
                     market,
-                    language
+                    language,
+                    cancellationToken
                 );
+
                 if (bundlesResult.IsSuccess)
                 {
-                    return new Product(productresult.Value, bundlesResult.Value);
+                    return new Product(productData, bundlesResult.Value);
                 }
                 else
                 {
@@ -46,12 +65,24 @@ class Utils
             }
             else
             {
-                return new Product(productresult.Value, null);
+                return new Product(productData, null);
             }
         }
         else
         {
-            throw productresult.Exception;
+            var pageResult = await StoreEdgeFDPage.GetProductAsync(
+                productId,
+                SystemInfo.GetStoreEdgeFDArch(),
+                market,
+                language,
+                cancellationToken
+            );
+
+            if (!pageResult.IsSuccess)
+                throw pageResult.Exception;
+
+            var productData = ProductData.FromStoreEdgeFDPage(pageResult.Value);
+            return new Product(productData, null);
         }
     }
 
@@ -76,12 +107,11 @@ class Utils
         TextBlock errorIconText
     )
     {
-        if (sender is FrameworkElement element && element.Tag is string productId)
+        if (sender is FrameworkElement element && element.Tag is Card card)
         {
-            // Show loading indicator
-
             NavigateToProductOrBundle(
-                productId,
+                card.ProductId,
+                card.InstallerType,
                 navigationFrame,
                 displayItem,
                 errorIcon,
@@ -91,12 +121,13 @@ class Utils
         }
         else
         {
-            Debug.WriteLine("Failed to get ProductId for navigation");
+            Debug.WriteLine("Failed to get card for navigation");
         }
     }
 
     public static async void NavigateToProductOrBundle(
         string productId,
+        InstallerType installerType,
         Frame navigationFrame,
         UIElement displayItem,
         UIElement errorIcon,
@@ -109,15 +140,12 @@ class Utils
         loadingOverlay.Visibility = Visibility.Visible;
         try
         {
-            // Await the API call directly on the UI thread.
-            var product = await Utils.ProductOrBundle(productId);
+            var product = await Utils.ProductOrBundle(productId, installerType);
 
-            // Update UI and navigate directly (since async/await yields control properly)
             loadingOverlay.Visibility = Visibility.Collapsed;
 
-            if (product.ProductInfo.IsBundle)
+            if (product.IsBundle)
             {
-                // Navigate to BundlesPage with both product and bundle.
                 navigationFrame.Navigate(
                     typeof(BundlesPage),
                     (product.ProductInfo, product.BundleInfo)
@@ -125,7 +153,6 @@ class Utils
             }
             else
             {
-                // Navigate to AppPage with just the product.
                 navigationFrame.Navigate(typeof(AppPage), product.ProductInfo);
             }
         }

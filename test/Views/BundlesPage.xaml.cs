@@ -33,13 +33,13 @@ public sealed partial class BundlesPage : Page
     {
         base.OnNavigatedTo(e);
 
-        if (e.Parameter is (StoreEdgeFDProduct productInfo, StoreEdgeFDQuery bundleInfo))
+        if (e.Parameter is (ProductData productInfo, StoreEdgeFDQuery bundleInfo))
         {
             LoadData(productInfo, bundleInfo);
         }
     }
 
-    private void LoadData(StoreEdgeFDProduct productInfo, StoreEdgeFDQuery bundleInfo)
+    private void LoadData(ProductData productInfo, StoreEdgeFDQuery bundleInfo)
     {
         DisplayItem.Visibility = Visibility.Collapsed;
         ErrorIcon.Visibility = Visibility.Collapsed;
@@ -52,6 +52,7 @@ public sealed partial class BundlesPage : Page
             productInfo.Logo,
             productInfo.Screenshots,
             productInfo.RevisionId,
+            productInfo.Version,
             productInfo.Title,
             productInfo.PublisherName,
             productInfo.Description,

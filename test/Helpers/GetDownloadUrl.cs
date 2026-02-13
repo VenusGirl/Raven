@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using StoreListings.Library;
+﻿using StoreListings.Library;
 using test.Models;
 
 namespace test.Helpers;
@@ -120,34 +119,19 @@ public static class GetDownloadUrl
 
     public static async Task<FileEntry?> fetch(
         string productId,
+        InstallerType installerType,
         CancellationToken cancellationToken = default,
         DeviceFamily deviceFamily = DeviceFamily.Desktop,
         Market market = Market.US,
         Lang language = Lang.en,
         string flightRing = "Retail",
         string flightingBranchName = "Retail",
-        StoreListings.Library.Version? OSVersion = null,
         string currentBranch = "ge_release"
     )
     {
-        // Resolve OS version if not supplied (exact Windows build).
-        OSVersion ??= SystemInfo.GetExactWindowsVersion();
+        var OSVersion = SystemInfo.GetExactWindowsVersion();
 
-        // 1) Query product
-        var result = await StoreEdgeFDProduct.GetProductAsync(
-            productId,
-            deviceFamily,
-            market,
-            language,
-            cancellationToken
-        );
-
-        if (!result.IsSuccess)
-            return null;
-
-        var product = result.Value;
-
-        switch (product.InstallerType)
+        switch (installerType)
         {
             case InstallerType.Packaged:
             {
@@ -165,7 +149,7 @@ public static class GetDownloadUrl
                 // Ensure at least one package applicable to our OS version
                 if (
                     !packageResult.Value.Any(p =>
-                        p.PlatformDependencies.Any(pd => pd.MinVersion <= OSVersion.Value)
+                        p.PlatformDependencies.Any(pd => pd.MinVersion <= OSVersion)
                     )
                 )
                     return null;
@@ -178,10 +162,10 @@ public static class GetDownloadUrl
                 var archRid = SystemInfo.GetOsArchRid();
                 var osArch = archRid switch
                 {
-                    "arm64" => OSArch.ARM64,
-                    "x86" => OSArch.X86,
-                    "arm" => OSArch.ARM,
-                    _ => OSArch.AMD64,
+                    "arm64" => FE3OSArch.ARM64,
+                    "x86" => FE3OSArch.X86,
+                    "arm" => FE3OSArch.ARM,
+                    _ => FE3OSArch.AMD64,
                 };
 
                 var fe3sync = await FE3Handler.SyncUpdatesAsync(
@@ -192,7 +176,7 @@ public static class GetDownloadUrl
                     currentBranch,
                     flightRing,
                     flightingBranchName,
-                    OSVersion.Value,
+                    OSVersion,
                     deviceFamily,
                     cancellationToken,
                     osArch
@@ -246,7 +230,7 @@ public static class GetDownloadUrl
                         !t.IsFramework
                         && t.TargetPlatforms.Any(p =>
                             (p.Family == deviceFamily || p.Family == DeviceFamily.Universal)
-                            && p.MinVersion <= OSVersion.Value
+                            && p.MinVersion <= OSVersion
                         )
                     )
                     .OrderByDescending(t => t.Version)
@@ -273,7 +257,7 @@ public static class GetDownloadUrl
                             currentBranch,
                             flightRing,
                             flightingBranchName,
-                            OSVersion.Value,
+                            OSVersion,
                             deviceFamily,
                             cancellationToken,
                             osArch
@@ -283,11 +267,14 @@ public static class GetDownloadUrl
                             continue;
 
                         var dcatMain = packageResult.Value.FirstOrDefault(p =>
-                            p.PackageIdentity.Equals(
+                            p.PackageIdentityName.Equals(
                                 main.PackageIdentityName,
                                 StringComparison.OrdinalIgnoreCase
                             )
-                            && p.Version == main.Version
+                            && (
+                                p.AppVersion is null
+                                || p.AppVersion.ToString() == main.Version.ToString()
+                            )
                         );
 
                         var depEntries = new List<FileEntry>();
@@ -309,16 +296,13 @@ public static class GetDownloadUrl
                                         )
                                         && d.Version >= dep.MinVersion
                                         && d.TargetPlatforms.Any(tp =>
-                                            tp.MinVersion <= OSVersion.Value
+                                            tp.MinVersion <= OSVersion
                                             && (
                                                 tp.Family == DeviceFamily.Universal
                                                 || tp.Family == deviceFamily
                                             )
                                         )
-                                        && ArchMatches(
-                                            d.FileName ?? d.PackageIdentityName,
-                                            arch
-                                        )
+                                        && ArchMatches(d.FileName ?? d.PackageIdentityName, arch)
                                     )
                                     .ToList();
 
@@ -336,7 +320,9 @@ public static class GetDownloadUrl
 
                                 // Reduce using existing helper (operates over a tuple list).
                                 var reduced = ReduceFrameworkDependencyFiles(
-                                    latestGroup.Select(u => (Update: u, Url: string.Empty)).ToList(),
+                                    latestGroup
+                                        .Select(u => (Update: u, Url: string.Empty))
+                                        .ToList(),
                                     arch
                                 );
 
@@ -360,7 +346,7 @@ public static class GetDownloadUrl
                                 currentBranch,
                                 flightRing,
                                 flightingBranchName,
-                                OSVersion.Value,
+                                OSVersion,
                                 deviceFamily,
                                 cancellationToken,
                                 osArch
@@ -373,9 +359,15 @@ public static class GetDownloadUrl
                                 goto NextMainCandidate;
                             }
 
-                            depUpdate.SetDownloadInfoPackageDigest(depDownloadInfo.Value.Package.Digest);
-                            depUpdate.SetDownloadInfoBlockmapUrl(depDownloadInfo.Value.BlockmapCab?.Url);
-                            depUpdate.SetDownloadInfoBlockmapDigest(depDownloadInfo.Value.BlockmapCab?.Digest);
+                            depUpdate.SetDownloadInfoPackageDigest(
+                                depDownloadInfo.Value.Package.Digest
+                            );
+                            depUpdate.SetDownloadInfoBlockmapUrl(
+                                depDownloadInfo.Value.BlockmapCab?.Url
+                            );
+                            depUpdate.SetDownloadInfoBlockmapDigest(
+                                depDownloadInfo.Value.BlockmapCab?.Digest
+                            );
 
                             depEntries.Add(
                                 new FileEntry(
@@ -392,7 +384,9 @@ public static class GetDownloadUrl
                         // Store download-info on main update for downstream cache/delta logic.
                         main.SetDownloadInfoPackageDigest(mainDownloadInfo.Value.Package.Digest);
                         main.SetDownloadInfoBlockmapUrl(mainDownloadInfo.Value.BlockmapCab?.Url);
-                        main.SetDownloadInfoBlockmapDigest(mainDownloadInfo.Value.BlockmapCab?.Digest);
+                        main.SetDownloadInfoBlockmapDigest(
+                            mainDownloadInfo.Value.BlockmapCab?.Digest
+                        );
 
                         // Return main with dependencies
                         return new FileEntry(
@@ -404,7 +398,7 @@ public static class GetDownloadUrl
                             BlockmapCabFileDigest: main.GetDownloadInfoBlockmapDigest()
                         );
 
-                    NextMainCandidate:
+                        NextMainCandidate:
                         ;
                     }
                 }
@@ -416,7 +410,8 @@ public static class GetDownloadUrl
             case InstallerType.Unpackaged:
             {
                 // Query unpackaged installer
-                var unpackagedResult = await product.GetUnpackagedInstall(
+                var unpackagedResult = await StoreEdgeFDProduct.GetUnpackagedInstall(
+                    productId,
                     market,
                     language,
                     cancellationToken

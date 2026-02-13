@@ -13,6 +13,7 @@ public partial class AppInfo : INotifyPropertyChanged
         _logo = null;
         _screenshots = [];
         _lastUpdated = null;
+        _version = null;
         _title = string.Empty;
         _publisherName = string.Empty;
         _description = string.Empty;
@@ -26,6 +27,7 @@ public partial class AppInfo : INotifyPropertyChanged
         Image logo,
         List<Image> screenshots,
         string? lastUpdated,
+        string? version,
         string title,
         string publisherName,
         string? description,
@@ -38,6 +40,7 @@ public partial class AppInfo : INotifyPropertyChanged
         Logo = logo;
         Screenshots = screenshots;
         LastUpdated = lastUpdated;
+        Version = version;
         Title = title;
         PublisherName = publisherName;
         Description = description;
@@ -55,6 +58,20 @@ public partial class AppInfo : INotifyPropertyChanged
             if (_productID != value)
             {
                 _productID = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    private string? _version;
+    public string? Version
+    {
+        get => string.IsNullOrWhiteSpace(_version) ? "N/A" : _version;
+        set
+        {
+            if (_version != value)
+            {
+                _version = value;
                 OnPropertyChanged();
             }
         }

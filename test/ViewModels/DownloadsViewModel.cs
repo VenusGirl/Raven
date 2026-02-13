@@ -21,9 +21,9 @@ public partial class DownloadsViewModel : ObservableObject
     [RelayCommand]
     private void NavigateToApp(DownloadItem? item)
     {
-        if (item?.ProductInfo != null)
+        if (item != null)
         {
-            _navigationService.NavigateTo(typeof(AppViewModel).FullName!, item.ProductInfo);
+            _navigationService.NavigateTo(typeof(AppViewModel).FullName!, item);
         }
     }
 

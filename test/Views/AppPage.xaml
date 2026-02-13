@@ -315,6 +315,20 @@
               Margin="0,5"
               Text="{x:Bind AppData.Size, Mode=OneWay}"
             />
+             <!--  Version  -->
+             <TextBlock
+               Grid.Row="1"
+               Grid.Column="0"
+               Margin="0,5"
+               Style="{ThemeResource BodyStrongTextBlockStyle}"
+               Text="Version:"
+             />
+             <TextBlock
+               Grid.Row="1"
+               Grid.Column="1"
+               Margin="0,5"
+               Text="{x:Bind AppData.Version, Mode=OneWay}"
+             />
             <!--  Last Updated  -->
             <TextBlock
               Grid.Row="2"

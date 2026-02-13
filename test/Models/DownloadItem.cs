@@ -52,7 +52,6 @@ public partial class DownloadItem : INotifyPropertyChanged
         }
     }
 
-
     private string _productId = string.Empty;
     public string ProductId
     {
@@ -138,7 +137,6 @@ public partial class DownloadItem : INotifyPropertyChanged
         }
     }
 
-
     private double _progress;
 
     [JsonIgnore]
@@ -181,11 +179,38 @@ public partial class DownloadItem : INotifyPropertyChanged
     }
 
     [JsonIgnore]
-    public List<string> DownloadedFilePaths => DownloadedFiles.Select(f => f.Path).ToList();
+    public List<string> DownloadedFilePaths
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(DownloadPath) && Directory.Exists(DownloadPath))
+            {
+                try
+                {
+                    return Directory.GetFiles(DownloadPath, "*", SearchOption.AllDirectories).ToList();
+                }
+                catch
+                {
+                   // Fallback to memory list if directory access fails
+                }
+            }
+            return DownloadedFiles.Select(f => f.Path).ToList();
+        }
+    }
+
+    public InstallerType InstallerType { get; set; }
+
+    public string? PackageFamilyName { get; set; }
+
+    /// <summary>
+    /// The root directory where files for this app are downloaded.
+    /// Stores the full path.
+    /// </summary>
+    public string? DownloadPath { get; set; }
 
     // For storing the original product info to navigate back
     [JsonIgnore]
-    public StoreEdgeFDProduct? ProductInfo { get; set; }
+    public ProductData? ProductInfo { get; set; }
 
     private string? _statusTextOverride;
 
@@ -227,6 +252,7 @@ public partial class DownloadItem : INotifyPropertyChanged
         };
 
     private long? _receivedBytes;
+
     [JsonIgnore]
     public long? ReceivedBytes
     {
@@ -243,6 +269,7 @@ public partial class DownloadItem : INotifyPropertyChanged
     }
 
     private long? _totalBytes;
+
     [JsonIgnore]
     public long? TotalBytes
     {

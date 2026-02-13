@@ -16,8 +16,9 @@ public sealed partial class AppPage : Page
     public AppInfo AppData { get; set; } = new();
     public UIUpdateService UpdateService { get; }
 
-    private CancellationTokenSource? _cts;
-    private StoreEdgeFDProduct? _currentProductInfo;
+    private CancellationTokenSource? _productLoadCts;
+    private CancellationTokenSource? _downloadCts;
+    private ProductData? _currentProductInfo;
     private DownloadItem? _activeDownloadItem;
 
     private static readonly string[] UnpackagedExtensions = [".exe", ".msi"];
@@ -40,13 +41,18 @@ public sealed partial class AppPage : Page
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
+        _productLoadCts = new CancellationTokenSource();
 
-        var (productInfo, productId) = e.Parameter switch
+        var (productInfo, productId, installerType) = e.Parameter switch
         {
-            StoreEdgeFDProduct p => (p, (string?)null),
-            DownloadItem { ProductInfo: not null } d => (d.ProductInfo, (string?)null),
-            DownloadItem d => (null, d.ProductId),
-            _ => ((StoreEdgeFDProduct?)null, (string?)null),
+            ProductData p => (p, (string?)null, InstallerType.Unknown),
+            DownloadItem { ProductInfo: not null } d => (
+                d.ProductInfo,
+                (string?)null,
+                InstallerType.Unknown
+            ),
+            DownloadItem d => (null, d.ProductId, d.InstallerType),
+            _ => ((ProductData?)null, (string?)null, InstallerType.Unknown),
         };
 
         if (productInfo != null)
@@ -55,14 +61,25 @@ public sealed partial class AppPage : Page
         }
         else if (productId != null)
         {
-            await FetchAndLoadProductAsync(productId);
+            await FetchAndLoadProductAsync(productId, installerType);
         }
 
-        // Always update button state in case navigating back to an active install
         UpdateInstallButtonState();
     }
 
-    private void LoadProduct(StoreEdgeFDProduct productInfo)
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        base.OnNavigatedFrom(e);
+
+        _productLoadCts?.Cancel();
+        _productLoadCts?.Dispose();
+        _productLoadCts = null;
+
+        UpdateService.StopStatusAnimation();
+        UnbindFromDownloadItem();
+    }
+
+    private void LoadProduct(ProductData productInfo)
     {
         _currentProductInfo = productInfo;
 
@@ -71,6 +88,7 @@ public sealed partial class AppPage : Page
             productInfo.Logo,
             productInfo.Screenshots,
             productInfo.RevisionId,
+            productInfo.Version,
             productInfo.Title,
             productInfo.PublisherName,
             productInfo.Description,
@@ -84,7 +102,13 @@ public sealed partial class AppPage : Page
         if (downloadItem != null)
         {
             downloadItem.ProductInfo = productInfo;
-            downloadManager.UpdateDownloadRevision(productInfo.ProductId, productInfo.RevisionId);
+            if (productInfo.RevisionId != null)
+            {
+                downloadManager.UpdateDownloadRevision(
+                    productInfo.ProductId,
+                    productInfo.RevisionId
+                );
+            }
 
             if (productInfo.InstallerType == InstallerType.Unpackaged)
             {
@@ -94,37 +118,37 @@ public sealed partial class AppPage : Page
                 );
             }
         }
+
         SetLoading(false);
         UpdateInstallButtonState();
     }
 
-    private async Task FetchAndLoadProductAsync(string productId)
+    private async Task FetchAndLoadProductAsync(string productId, InstallerType installerType)
     {
         SetLoading(true);
 
-        var result = await StoreEdgeFDProduct.GetProductAsync(
-            productId,
-            DeviceFamily.Desktop,
-            Market.US,
-            Lang.en
-        );
-
-        if (result.IsSuccess)
+        try
         {
+            var product = await Utils.ProductOrBundle(
+                productId,
+                installerType,
+                _productLoadCts?.Token ?? default
+            );
+
             var downloadItem = DownloadManagerService.Instance.GetDownload(productId);
             if (downloadItem != null)
             {
-                downloadItem.ProductInfo = result.Value;
+                downloadItem.ProductInfo = product.ProductInfo;
             }
 
-            LoadProduct(result.Value);
+            LoadProduct(product.ProductInfo);
         }
-        else
+        catch (Exception ex)
         {
             SetLoading(false);
             await ShowErrorDialogAsync(
                 "Error loading app",
-                $"Could not load app details: {result.Exception?.Message}"
+                $"Could not load app details: {ex.Message}"
             );
         }
     }
@@ -184,10 +208,10 @@ public sealed partial class AppPage : Page
         }
     }
 
-    private static bool IsPackagedInstalled(StoreEdgeFDProduct product) =>
+    private static bool IsPackagedInstalled(ProductData product) =>
         PackagedAppDiscovery.IsInstalled(product.PackageFamilyName);
 
-    private static bool IsUnpackagedInstalled(StoreEdgeFDProduct product) =>
+    private static bool IsUnpackagedInstalled(ProductData product) =>
         Win32AppDiscovery.GetInstalledInfo(product.Title).IsInstalled;
 
     private bool IsUnpackagedUpdateAvailable(DownloadItem? downloadItem)
@@ -201,7 +225,7 @@ public sealed partial class AppPage : Page
         // Prefer the Store version already captured on the download item.
         // If the user hasn't downloaded anything yet, fall back to the currently
         // loaded product's Store version so the UI can still show "Update".
-        var storeVersion = downloadItem?.StoreVersion ?? _currentProductInfo.Version;
+        var storeVersion = downloadItem?.StoreVersion ?? AppData.Version;
         var localVersion = installedInfo.InstalledVersion;
 
         if (string.IsNullOrWhiteSpace(storeVersion) || string.IsNullOrWhiteSpace(localVersion))
@@ -346,7 +370,7 @@ public sealed partial class AppPage : Page
             case nameof(DownloadItem.Progress):
                 // Keep progress in sync with the bound UpdateService.
                 UpdateService.SetProgress(item.Progress);
-                SetProgressIndeterminate(false);
+                UpdateProgressIndeterminate(item.Status);
                 // Update DetailsText during install progress changes
                 if (item.Status == DownloadStatus.Installing)
                 {
@@ -395,13 +419,6 @@ public sealed partial class AppPage : Page
                 }
                 break;
         }
-    }
-
-    protected override void OnNavigatedFrom(NavigationEventArgs e)
-    {
-        base.OnNavigatedFrom(e);
-        UpdateService.StopStatusAnimation();
-        UnbindFromDownloadItem();
     }
 
     private void SetInstallButtonState(
@@ -540,19 +557,19 @@ public sealed partial class AppPage : Page
                 BindToDownloadItem(downloadItem);
             }
 
-            // Always use a fresh CTS per attempt
-            _cts?.Cancel();
-            _cts?.Dispose();
-            _cts = new CancellationTokenSource();
+            // Always use a fresh CTS per download attempt
+            _downloadCts?.Cancel();
+            _downloadCts?.Dispose();
+            _downloadCts = new CancellationTokenSource();
             StopButton.IsEnabled = true;
 
-            downloadManager.RegisterCancellationToken(productId, _cts);
+            downloadManager.RegisterCancellationToken(productId, _downloadCts);
 
             // If cancellation was requested from the Downloads page before we got here,
             // stop early.
             if (
                 downloadManager.IsCancellationRequested(productId)
-                || _cts.Token.IsCancellationRequested
+                || _downloadCts.Token.IsCancellationRequested
             )
             {
                 HandleDownloadError(productId, "Operation canceled.", DownloadStatus.Cancelled);
@@ -583,7 +600,11 @@ public sealed partial class AppPage : Page
             try
             {
                 // Ensure the fetch respects cancellation too
-                urls = await GetDownloadUrl.fetch(productId, _cts.Token);
+                urls = await GetDownloadUrl.fetch(
+                    productId,
+                    _currentProductInfo.InstallerType,
+                    _downloadCts.Token
+                );
             }
             catch (OperationCanceledException)
             {
@@ -599,7 +620,7 @@ public sealed partial class AppPage : Page
             // If cancelled during fetch without throwing (e.g. external cancellation request)
             if (
                 downloadManager.IsCancellationRequested(productId)
-                || _cts.Token.IsCancellationRequested
+                || _downloadCts.Token.IsCancellationRequested
             )
             {
                 UpdateService.StopStatusAnimation();
@@ -637,7 +658,12 @@ public sealed partial class AppPage : Page
 
             SetProgressIndeterminate(false);
 
-            await DownloadHelper.StartDownloadAsync(urls, productId, _cts.Token, UpdateService);
+            await DownloadHelper.StartDownloadAsync(
+                urls,
+                productId,
+                _downloadCts.Token,
+                UpdateService
+            );
 
             downloadManager.UnregisterCancellationToken(productId);
 

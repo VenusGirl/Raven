@@ -87,7 +87,7 @@ public sealed partial class SearchPage : Page
         }
         else if (e.Parameter is Card card)
         {
-            CardView.NavigateToProductOrBundle(card.ProductId);
+            CardView.NavigateToProductOrBundle(card.ProductId, card.InstallerType);
         }
     }
 }

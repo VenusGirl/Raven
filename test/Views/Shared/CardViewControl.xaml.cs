@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
+using StoreListings.Library;
 using test.Contracts.Services;
 using test.Helpers;
 using Windows.Foundation;
@@ -173,13 +174,13 @@ public sealed partial class CardViewControl : UserControl
 
     private void Card_Tapped(object sender, TappedRoutedEventArgs e)
     {
-        if (sender is FrameworkElement element && element.Tag is string productId)
+        if (sender is FrameworkElement element && element.Tag is Card card)
         {
-            NavigateToProductOrBundle(productId);
+            NavigateToProductOrBundle(card.ProductId, card.InstallerType);
         }
         else
         {
-            Debug.WriteLine("Failed to get ProductId for navigation");
+            Debug.WriteLine("Failed to get card for navigation");
         }
     }
 
@@ -384,7 +385,7 @@ public sealed partial class CardViewControl : UserControl
         }
     }
 
-    public async void NavigateToProductOrBundle(string productId)
+    public async void NavigateToProductOrBundle(string productId, InstallerType installerType)
     {
         DisplayItem.Visibility = Visibility.Collapsed;
         ErrorIcon.Visibility = Visibility.Collapsed;
@@ -393,15 +394,12 @@ public sealed partial class CardViewControl : UserControl
         var NavigationFrame = App.GetService<INavigationService>().Frame;
         try
         {
-            // Await the API call directly on the UI thread.
-            var product = await Utils.ProductOrBundle(productId);
+            var product = await Utils.ProductOrBundle(productId, installerType);
 
-            // Update UI and navigate directly (since async/await yields control properly)
             LoadingOverlay.Visibility = Visibility.Collapsed;
 
-            if (product.ProductInfo.IsBundle)
+            if (product.IsBundle)
             {
-                // Navigate to BundlesPage with both product and bundle.
                 NavigationFrame?.Navigate(
                     typeof(BundlesPage),
                     (product.ProductInfo, product.BundleInfo)
@@ -409,7 +407,6 @@ public sealed partial class CardViewControl : UserControl
             }
             else
             {
-                // Navigate to AppPage with just the product.
                 NavigationFrame?.Navigate(typeof(AppPage), product.ProductInfo);
             }
         }

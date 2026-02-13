@@ -170,7 +170,7 @@ public class DownloadManagerService
         }
     }
 
-    public void AddDownload(StoreEdgeFDProduct productInfo)
+    public void AddDownload(ProductData productInfo)
     {
         lock (_lock)
         {
@@ -185,7 +185,9 @@ public class DownloadManagerService
                 LogoUrl = productInfo.Logo?.Url,
                 PublisherName = productInfo.PublisherName,
                 RevisionId = productInfo.RevisionId,
-                StoreVersion = productInfo.Version,
+                InstallerType = productInfo.InstallerType,
+                PackageFamilyName = productInfo.PackageFamilyName,
+                StoreVersion = null,
                 Status = DownloadStatus.Downloading,
                 LastAccessedAt = DateTime.Now,
                 ProductInfo = productInfo,
@@ -216,6 +218,27 @@ public class DownloadManagerService
         else
         {
             item.StoreVersion = storeVersion;
+        }
+
+        SaveDownloads();
+    }
+
+    public void UpdateDownloadPath(string productId, string downloadPath)
+    {
+        var item = GetDownload(productId);
+        if (item == null)
+            return;
+
+        if (string.Equals(item.DownloadPath, downloadPath, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (IsAnyoneObserving)
+        {
+            RunOnUIThread(() => item.DownloadPath = downloadPath);
+        }
+        else
+        {
+            item.DownloadPath = downloadPath;
         }
 
         SaveDownloads();
@@ -622,6 +645,20 @@ public class DownloadManagerService
                             item.Status = DownloadStatus.Completed;
                         }
 
+                        // Helper to detect if files are present (legacy list or new folder path)
+                        bool HasFiles()
+                        {
+                            if (item.DownloadedFiles.Count > 0) return true;
+                            if (
+                                !string.IsNullOrWhiteSpace(item.DownloadPath)
+                                && Directory.Exists(item.DownloadPath)
+                            )
+                            {
+                                return Directory.EnumerateFileSystemEntries(item.DownloadPath).Any();
+                            }
+                            return false;
+                        }
+
                         // Reset any "Downloading" status to "Cancelled" on app restart
                         // since the download won't continue
                         if (
@@ -633,7 +670,7 @@ public class DownloadManagerService
                         }
                         else if (
                             item.Status == DownloadStatus.Cancelling
-                            && item.DownloadedFiles.Count > 0
+                            && HasFiles()
                         )
                         {
                             item.Status = DownloadStatus.Completed;
@@ -644,10 +681,9 @@ public class DownloadManagerService
                         }
                         else if (item.Status == DownloadStatus.Installing)
                         {
-                            item.Status =
-                                item.DownloadedFiles.Count > 0
-                                    ? DownloadStatus.Completed
-                                    : DownloadStatus.Cancelled;
+                            item.Status = HasFiles()
+                                ? DownloadStatus.Completed
+                                : DownloadStatus.Cancelled;
                         }
                         Downloads.Add(item);
                         if (item.Status is DownloadStatus.Completed)
@@ -800,11 +836,28 @@ public class DownloadManagerService
 
     private static void DeleteDownloadedFiles(DownloadItem item)
     {
-        // Prefer deleting the whole app folder under `<base>\\downloads\\<AppFolderName>`.
-        // This matches how downloads are laid out in `DownloadHelper`.
+        // Prefer deleting the explicit download folder if set.
+        // This handles cases where individual file paths are missing or stale.
         try
         {
-            var baseDownloadsDir = Path.Combine(AppContext.BaseDirectory, "downloads");
+            if (!string.IsNullOrWhiteSpace(item.DownloadPath) && Directory.Exists(item.DownloadPath))
+            {
+                Directory.Delete(item.DownloadPath, recursive: true);
+                Debug.WriteLine($"Deleted app folder: {item.DownloadPath}");
+
+                // Cleanup empty downloads root if needed
+                var baseDownloadsDir = Path.Combine(AppContext.BaseDirectory, "downloads");
+                if (
+                    Directory.Exists(baseDownloadsDir)
+                    && !Directory.EnumerateFileSystemEntries(baseDownloadsDir).Any()
+                )
+                {
+                    Directory.Delete(baseDownloadsDir, recursive: false);
+                }
+                return;
+            }
+
+            var baseDownloadsDirOld = Path.Combine(AppContext.BaseDirectory, "downloads");
 
             // Find the deepest directory that still lives under the downloads root.
             string? appDir = null;
@@ -821,7 +874,7 @@ public class DownloadManagerService
                 var parent = Directory.GetParent(dir);
                 if (
                     parent != null
-                    && parent.FullName.Equals(baseDownloadsDir, StringComparison.OrdinalIgnoreCase)
+                    && parent.FullName.Equals(baseDownloadsDirOld, StringComparison.OrdinalIgnoreCase)
                 )
                 {
                     appDir = dir;
@@ -833,7 +886,7 @@ public class DownloadManagerService
                 if (
                     grandParent != null
                     && grandParent.FullName.Equals(
-                        baseDownloadsDir,
+                        baseDownloadsDirOld,
                         StringComparison.OrdinalIgnoreCase
                     )
                 )
@@ -870,11 +923,11 @@ public class DownloadManagerService
 
             // If `downloads` becomes empty, remove it as well.
             if (
-                Directory.Exists(baseDownloadsDir)
-                && !Directory.EnumerateFileSystemEntries(baseDownloadsDir).Any()
+                Directory.Exists(baseDownloadsDirOld)
+                && !Directory.EnumerateFileSystemEntries(baseDownloadsDirOld).Any()
             )
             {
-                Directory.Delete(baseDownloadsDir, recursive: false);
+                Directory.Delete(baseDownloadsDirOld, recursive: false);
             }
         }
         catch (Exception ex)
