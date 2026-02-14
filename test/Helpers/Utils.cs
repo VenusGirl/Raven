@@ -12,6 +12,61 @@ namespace test.Helpers;
 
 class Utils
 {
+    /// <summary>
+    /// Returns the architecture priority order based on system architecture and installer type.
+    /// </summary>
+    public static string[] GetArchPriorities(string archRid, bool isPackaged)
+    {
+        var arch = archRid?.ToLowerInvariant() ?? "x86";
+
+        if (isPackaged)
+        {
+            return arch switch
+            {
+                "arm64" => new[] { "arm64", "arm", "x64", "x86", "neutral" },
+                "x64" => new[] { "x64", "x86", "neutral" },
+                "x86" => new[] { "x86", "neutral" },
+                "arm" => new[] { "arm", "neutral" },
+                _ => new[] { arch, "neutral" },
+            };
+        }
+        else
+        {
+            return arch switch
+            {
+                "arm64" => new[] { "arm64", "arm", "x64", "x86" },
+                "x64" => new[] { "x64", "x86" },
+                "x86" => new[] { "x86" },
+                "arm" => new[] { "arm" },
+                _ => new[] { arch },
+            };
+        }
+    }
+
+    /// <summary>
+    /// Parses filename or architecture string to a standardized architecture name.
+    /// </summary>
+    public static string ParseArchString(string? name, bool isPackaged)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return isPackaged ? "neutral" : "x86";
+
+        var lower = name.ToLowerInvariant();
+
+        if (lower.Contains("arm64"))
+            return "arm64";
+        if (lower.Contains("arm"))
+            return "arm";
+        if (lower.Contains("x64") || lower.Contains("amd64"))
+            return "x64";
+        if (lower.Contains("x86") || lower.Contains("x32"))
+            return "x86";
+        if (isPackaged && lower.Contains("neutral"))
+            return "neutral";
+
+        return isPackaged ? "neutral" : "x86";
+    }
+
     public static async Task<Product> ProductOrBundle(
         string productId,
         InstallerType installerType,
@@ -34,14 +89,51 @@ class Utils
             if (!dcatResult.IsSuccess)
                 throw dcatResult.Exception;
 
-            var best = dcatResult
-                .Value.Where(p => p != null)
-                .OrderByDescending(p => p.AppVersion)
-                .FirstOrDefault();
+            var packages = dcatResult.Value.Where(p => p != null).ToList();
 
-            if (best == null)
+            if (packages.Count == 0)
                 throw new Exception("No packages found for this product.");
 
+            // ---------------------------------------------------------
+            // Architecture Selection (Reusing your Helpers)
+            // ---------------------------------------------------------
+            var archRid = SystemInfo.GetOsArchRid();
+            var priorities = GetArchPriorities(archRid, isPackaged: true);
+            DCATPackage? best = null;
+
+            foreach (var priority in priorities)
+            {
+                // Filter packages that match the current priority architecture
+                // We check PackageFullName first, falling back to PackageIdentityName
+                var matches = packages
+                    .Where(p =>
+                        ParseArchString(
+                            p.PackageFullName ?? p.PackageIdentityName,
+                            isPackaged: true
+                        ) == priority
+                    )
+                    .OrderByDescending(p => p.AppVersion) // Always pick the highest version
+                    .ToList();
+
+                if (matches.Any())
+                {
+                    best = matches.First();
+                    break; // Found the best match, stop searching
+                }
+            }
+
+            // Fallback: If no specific architecture matched, default to the absolute highest version
+            if (best == null)
+            {
+                best = packages.OrderByDescending(p => p.AppVersion).FirstOrDefault();
+            }
+
+            if (best == null)
+                throw new Exception("Unable to determine a valid package for this product.");
+
+            // ---------------------------------------------------------
+            // Product Construction
+            // ---------------------------------------------------------
             var productData = ProductData.FromDCAT(best);
 
             if (best.IsBundle)

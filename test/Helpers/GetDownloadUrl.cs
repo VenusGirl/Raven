@@ -1,4 +1,5 @@
-﻿using StoreListings.Library;
+﻿using System.Diagnostics;
+using StoreListings.Library;
 using test.Models;
 
 namespace test.Helpers;
@@ -11,8 +12,6 @@ public static class GetDownloadUrl
             return false;
 
         var n = fileName;
-
-        // Prune common resource-only / language / scale satellite packages.
         return n.Contains("language-", StringComparison.OrdinalIgnoreCase)
             || n.Contains("_language", StringComparison.OrdinalIgnoreCase)
             || n.Contains("scale-", StringComparison.OrdinalIgnoreCase)
@@ -37,84 +36,34 @@ public static class GetDownloadUrl
         if (latestVersionGroup.Count == 0)
             return latestVersionGroup;
 
-        bool IsCompatibleArch(string? name)
-        {
-            name ??= string.Empty;
-
-            var hasX86 = name.Contains("x86", StringComparison.OrdinalIgnoreCase);
-            var hasX64 =
-                name.Contains("x64", StringComparison.OrdinalIgnoreCase)
-                || name.Contains("amd64", StringComparison.OrdinalIgnoreCase);
-            var hasArm64 = name.Contains("arm64", StringComparison.OrdinalIgnoreCase);
-            var hasArm = name.Contains("arm", StringComparison.OrdinalIgnoreCase) && !hasArm64;
-            var neutral = name.Contains("neutral", StringComparison.OrdinalIgnoreCase);
-
-            return archRid switch
-            {
-                "x64" => hasX64 || neutral || (!hasX86 && !hasX64 && !hasArm && !hasArm64),
-                "x86" => hasX86 || neutral || (!hasX86 && !hasX64 && !hasArm && !hasArm64),
-                "arm64" => hasArm64 || neutral || (!hasX86 && !hasX64 && !hasArm && !hasArm64),
-                "arm" => hasArm || neutral || (!hasX86 && !hasX64 && !hasArm && !hasArm64),
-                _ => true,
-            };
-        }
-
         // Prefer non-resource packages.
         var nonResource = latestVersionGroup
             .Where(a => !IsLikelyResourceOnlyPackage(a.Update.FileName))
             .ToList();
 
-        // Filter out cross-arch packages (e.g., ARM on x64).
-        var archFiltered = nonResource
-            .Where(a =>
-                IsCompatibleArch(a.Update.FileName)
-                || IsCompatibleArch(a.Update.PackageIdentityName)
-            )
-            .ToList();
+        var candidates = nonResource.Count > 0 ? nonResource : latestVersionGroup.ToList();
+        var priorities = Utils.GetArchPriorities(archRid, isPackaged: true);
 
-        // If filtering removed everything, fall back to previous behavior.
-        if (archFiltered.Count == 0)
-            return latestVersionGroup;
-
-        // If multiple remain, prefer the best arch match to avoid pulling extra variants.
-        static int ScoreArch(string? name, string arch)
+        foreach (var pref in priorities)
         {
-            name ??= string.Empty;
-            var hasX86 = name.Contains("x86", StringComparison.OrdinalIgnoreCase);
-            var hasX64 =
-                name.Contains("x64", StringComparison.OrdinalIgnoreCase)
-                || name.Contains("amd64", StringComparison.OrdinalIgnoreCase);
-            var hasArm64 = name.Contains("arm64", StringComparison.OrdinalIgnoreCase);
-            var hasArm = name.Contains("arm", StringComparison.OrdinalIgnoreCase) && !hasArm64;
-            var neutral = name.Contains("neutral", StringComparison.OrdinalIgnoreCase);
+            var matches = candidates
+                .Where(a =>
+                    Utils.ParseArchString(
+                        a.Update.FileName ?? a.Update.PackageIdentityName,
+                        isPackaged: true
+                    ) == pref
+                )
+                .ToList();
 
-            return arch switch
+            if (matches.Any())
             {
-                "arm64" => hasArm64 ? 3
-                : neutral ? 2
-                : 0,
-                "arm" => hasArm ? 3
-                : neutral ? 2
-                : 0,
-                "x86" => hasX86 ? 3
-                : neutral ? 2
-                : 0,
-                "x64" => hasX64 ? 3
-                : neutral ? 2
-                : (!hasArm64 && !hasArm && !hasX86 && !hasX64) ? 1
-                : 0,
-                _ => 0,
-            };
+                // If multiple remain, pick the shortest filename to avoid edge-case variants
+                var best = matches.OrderBy(a => (a.Update.FileName ?? string.Empty).Length).First();
+                return new[] { best };
+            }
         }
 
-        var best = archFiltered
-            .OrderByDescending(a =>
-                ScoreArch(a.Update.FileName ?? a.Update.PackageIdentityName, archRid)
-            )
-            .ThenByDescending(a => (a.Update.FileName ?? string.Empty).Length)
-            .FirstOrDefault();
-
-        return best.Update is null ? archFiltered : new[] { best };
+        return new[] { candidates.First() };
     }
 
     public static async Task<FileEntry?> fetch(
@@ -130,23 +79,21 @@ public static class GetDownloadUrl
     )
     {
         var OSVersion = SystemInfo.GetExactWindowsVersion();
-
+        var archRid = SystemInfo.GetOsArchRid();
+        Debug.WriteLine($"{installerType}, {OSVersion}, {archRid}, {productId}");
         switch (installerType)
         {
             case InstallerType.Packaged:
             {
-                // Query DCAT packages (with framework deps)
                 var packageResult = await DCATPackage.GetPackagesAsync(
                     productId,
                     market,
                     language,
                     true
                 );
-
                 if (!packageResult.IsSuccess)
                     return null;
 
-                // Ensure at least one package applicable to our OS version
                 if (
                     !packageResult.Value.Any(p =>
                         p.PlatformDependencies.Any(pd => pd.MinVersion <= OSVersion)
@@ -154,12 +101,10 @@ public static class GetDownloadUrl
                 )
                     return null;
 
-                // FE3 cookie + SyncUpdates
                 var cookieResult = await FE3Handler.GetCookieAsync(cancellationToken);
                 if (!cookieResult.IsSuccess)
                     return null;
 
-                var archRid = SystemInfo.GetOsArchRid();
                 var osArch = archRid switch
                 {
                     "arm64" => FE3OSArch.ARM64,
@@ -186,44 +131,7 @@ public static class GetDownloadUrl
                     return null;
 
                 var updates = fe3sync.Value.Updates.ToList();
-
-                // Choose latest applicable main (non-framework) that matches OS + device family + arch
-                static IReadOnlyList<string> GetArchPreferenceOrder(string archRid)
-                {
-                    return archRid switch
-                    {
-                        // x64 PCs can also run x86 apps (WOW64)
-                        "x64" => new[] { "x64", "x86" },
-                        // x86 PCs can only run x86 apps
-                        "x86" => new[] { "x86" },
-                        // ARM64 can run ARM natively, and x64/x86 via emulation
-                        "arm64" => new[] { "arm64", "arm", "x64", "x86" },
-                        // ARM (32-bit) only runs ARM apps
-                        "arm" => new[] { "arm" },
-                        _ => new[] { archRid },
-                    };
-                }
-
-                static bool ArchMatches(string name, string archRid)
-                {
-                    name ??= string.Empty;
-                    var hasX86 = name.Contains("x86", StringComparison.OrdinalIgnoreCase);
-                    var hasX64 =
-                        name.Contains("x64", StringComparison.OrdinalIgnoreCase)
-                        || name.Contains("amd64", StringComparison.OrdinalIgnoreCase);
-                    var hasArm64 = name.Contains("arm64", StringComparison.OrdinalIgnoreCase);
-                    var neutral = name.Contains("neutral", StringComparison.OrdinalIgnoreCase);
-
-                    return archRid switch
-                    {
-                        "arm64" => hasArm64 || neutral,
-                        "x64" => hasX64 || neutral || (!hasArm64 && !hasX86 && !hasX64),
-                        "x86" => hasX86 || neutral,
-                        _ => true,
-                    };
-                }
-
-                var archPreferences = GetArchPreferenceOrder(archRid);
+                var priorities = Utils.GetArchPriorities(archRid, isPackaged: true);
 
                 var candidates = updates
                     .Where(t =>
@@ -236,17 +144,84 @@ public static class GetDownloadUrl
                     .OrderByDescending(t => t.Version)
                     .ToList();
 
-                // Try preferred architectures in order (native first, then compatible fallbacks).
-                foreach (var arch in archPreferences)
+                foreach (var archPref in priorities)
                 {
-                    // Find the first candidate whose dependencies are fully applicable
-                    foreach (
-                        var main in candidates.Where(c =>
-                            ArchMatches(c.FileName ?? c.PackageIdentityName, arch)
-                        )
-                    )
+                    // 1. Select Main App Candidates matching current priority
+                    var archCandidates = candidates.Where(c =>
+                        Utils.ParseArchString(c.FileName ?? c.PackageIdentityName, isPackaged: true)
+                        == archPref
+                    );
+
+                    foreach (var main in archCandidates)
                     {
-                        // Fetch download-info only for the chosen main candidate.
+                        // --- 1. SELECTION ---
+                        var dcatMain = packageResult.Value.FirstOrDefault(p =>
+                            p.PackageIdentityName.Equals(
+                                main.PackageIdentityName,
+                                StringComparison.OrdinalIgnoreCase
+                            )
+                            && (
+                                p.AppVersion is null
+                                || p.AppVersion.ToString() == main.Version.ToString()
+                            )
+                        );
+
+                        var requiredDepUpdates = new List<FE3Handler.SyncUpdatesResponse.Update>();
+                        var allDepsOk = true;
+
+                        if (dcatMain is not null && dcatMain.FrameworkDependencies.Any())
+                        {
+                            foreach (var dep in dcatMain.FrameworkDependencies)
+                            {
+                                // FIX: Do NOT filter by 'archPref' here.
+                                // Find ALL valid candidates for this dependency, then let ReduceFrameworkDependencyFiles pick the best one.
+                                var applicable = updates
+                                    .Where(d =>
+                                        d.PackageIdentityName.Equals(
+                                            dep.PackageIdentity,
+                                            StringComparison.OrdinalIgnoreCase
+                                        )
+                                        && d.Version >= dep.MinVersion
+                                        && d.TargetPlatforms.Any(tp =>
+                                            tp.MinVersion <= OSVersion
+                                            && (
+                                                tp.Family == DeviceFamily.Universal
+                                                || tp.Family == deviceFamily
+                                            )
+                                        )
+                                    )
+                                    .ToList();
+
+                                if (!applicable.Any())
+                                {
+                                    allDepsOk = false;
+                                    break;
+                                }
+
+                                // Group by version to get the latest available version of this dependency
+                                var latestGroup = applicable
+                                    .GroupBy(a => a.Version)
+                                    .OrderByDescending(g => g.Key)
+                                    .First()
+                                    .ToList();
+
+                                // Use the helper to pick the best architecture for this dependency
+                                // (e.g. It might pick 'neutral' even if main app is 'x64')
+                                var reduced = ReduceFrameworkDependencyFiles(
+                                    latestGroup
+                                        .Select(u => (Update: u, Url: string.Empty))
+                                        .ToList(),
+                                    archRid
+                                );
+
+                                requiredDepUpdates.AddRange(reduced.Select(r => r.Update));
+                            }
+                        }
+
+                        if (!allDepsOk)
+                            continue;
+
+                        // --- 2. FETCH URLs ---
                         var mainDownloadInfo = await FE3Handler.GetPackageDownloadInfo(
                             fe3sync.Value.NewCookie,
                             main.UpdateID,
@@ -266,74 +241,9 @@ public static class GetDownloadUrl
                         if (!mainDownloadInfo.IsSuccess)
                             continue;
 
-                        var dcatMain = packageResult.Value.FirstOrDefault(p =>
-                            p.PackageIdentityName.Equals(
-                                main.PackageIdentityName,
-                                StringComparison.OrdinalIgnoreCase
-                            )
-                            && (
-                                p.AppVersion is null
-                                || p.AppVersion.ToString() == main.Version.ToString()
-                            )
-                        );
-
                         var depEntries = new List<FileEntry>();
+                        var networkDepsOk = true;
 
-                        // Accumulate the dependency updates we actually need.
-                        var requiredDepUpdates = new List<FE3Handler.SyncUpdatesResponse.Update>();
-
-                        if (dcatMain is not null && dcatMain.FrameworkDependencies.Any())
-                        {
-                            var allDepsOk = true;
-
-                            foreach (var dep in dcatMain.FrameworkDependencies)
-                            {
-                                var applicable = updates
-                                    .Where(d =>
-                                        d.PackageIdentityName.Equals(
-                                            dep.PackageIdentity,
-                                            StringComparison.OrdinalIgnoreCase
-                                        )
-                                        && d.Version >= dep.MinVersion
-                                        && d.TargetPlatforms.Any(tp =>
-                                            tp.MinVersion <= OSVersion
-                                            && (
-                                                tp.Family == DeviceFamily.Universal
-                                                || tp.Family == deviceFamily
-                                            )
-                                        )
-                                        && ArchMatches(d.FileName ?? d.PackageIdentityName, arch)
-                                    )
-                                    .ToList();
-
-                                if (!applicable.Any())
-                                {
-                                    allDepsOk = false;
-                                    break;
-                                }
-
-                                var latestGroup = applicable
-                                    .GroupBy(a => a.Version)
-                                    .OrderByDescending(g => g.Key)
-                                    .First()
-                                    .ToList();
-
-                                // Reduce using existing helper (operates over a tuple list).
-                                var reduced = ReduceFrameworkDependencyFiles(
-                                    latestGroup
-                                        .Select(u => (Update: u, Url: string.Empty))
-                                        .ToList(),
-                                    arch
-                                );
-
-                                requiredDepUpdates.AddRange(reduced.Select(r => r.Update));
-                            }
-
-                            if (!allDepsOk)
-                                continue; // try next candidate
-                        }
-
-                        // Fetch download-info only for required dependency updates.
                         foreach (var depUpdate in requiredDepUpdates.Distinct())
                         {
                             var depDownloadInfo = await FE3Handler.GetPackageDownloadInfo(
@@ -354,9 +264,8 @@ public static class GetDownloadUrl
 
                             if (!depDownloadInfo.IsSuccess)
                             {
-                                // If any required dep can't be resolved, try next main candidate.
-                                depEntries.Clear();
-                                goto NextMainCandidate;
+                                networkDepsOk = false;
+                                break;
                             }
 
                             depUpdate.SetDownloadInfoPackageDigest(
@@ -381,14 +290,16 @@ public static class GetDownloadUrl
                             );
                         }
 
-                        // Store download-info on main update for downstream cache/delta logic.
+                        if (!networkDepsOk)
+                            continue; // Dependency URL failed, fallback to next main candidate
+
+                        // --- 3. ASSEMBLY ---
                         main.SetDownloadInfoPackageDigest(mainDownloadInfo.Value.Package.Digest);
                         main.SetDownloadInfoBlockmapUrl(mainDownloadInfo.Value.BlockmapCab?.Url);
                         main.SetDownloadInfoBlockmapDigest(
                             mainDownloadInfo.Value.BlockmapCab?.Digest
                         );
 
-                        // Return main with dependencies
                         return new FileEntry(
                             FileName: main.FileName,
                             Url: mainDownloadInfo.Value.Package.Url,
@@ -397,39 +308,59 @@ public static class GetDownloadUrl
                             BlockmapUrl: main.GetDownloadInfoBlockmapUrl(),
                             BlockmapCabFileDigest: main.GetDownloadInfoBlockmapDigest()
                         );
-
-                        NextMainCandidate:
-                        ;
                     }
                 }
-
-                // No applicable candidate found
                 return null;
             }
-
             case InstallerType.Unpackaged:
             {
-                // Query unpackaged installer
                 var unpackagedResult = await StoreEdgeFDProduct.GetUnpackagedInstall(
                     productId,
                     market,
                     language,
                     cancellationToken
                 );
-                if (!unpackagedResult.IsSuccess)
+
+                if (
+                    !unpackagedResult.IsSuccess
+                    || unpackagedResult.Value == null
+                    || !unpackagedResult.Value.Any()
+                )
                     return null;
 
-                var url = unpackagedResult.Value.InstallerUrl;
-                var fileName = unpackagedResult.Value.FileName;
-                var sha256 = unpackagedResult.Value.InstallerSha256;
+                var items = unpackagedResult.Value;
+                var priorities = Utils.GetArchPriorities(archRid, isPackaged: false);
 
-                return new FileEntry(
-                    FileName: fileName,
-                    Url: url,
-                    Dependencies: Array.Empty<FileEntry>(),
-                    Sha256: sha256
-                );
+                foreach (var prefArch in priorities)
+                {
+                    var matchingCandidates = items
+                        .Where(i =>
+                            Utils.ParseArchString(i.architecture, isPackaged: false) == prefArch
+                        )
+                        .ToList();
+
+                    if (matchingCandidates.Any())
+                    {
+                        var bestCandidate = matchingCandidates
+                            .OrderByDescending(c =>
+                                System.Version.TryParse(c.Version, out var v)
+                                    ? v
+                                    : new System.Version(0, 0)
+                            )
+                            .First();
+
+                        return new FileEntry(
+                            FileName: bestCandidate.FileName,
+                            Url: bestCandidate.InstallerUrl,
+                            Dependencies: Array.Empty<FileEntry>(),
+                            Sha256: bestCandidate.InstallerSha256
+                        );
+                    }
+                }
+
+                return null;
             }
+
             default:
                 return null;
         }
