@@ -75,7 +75,8 @@ public static class GetDownloadUrl
         Lang language = Lang.en,
         string flightRing = "Retail",
         string flightingBranchName = "Retail",
-        string currentBranch = "ge_release"
+        string currentBranch = "ge_release",
+        bool ignoreDependencyFilter = false
     )
     {
         var OSVersion = SystemInfo.GetExactWindowsVersion();
@@ -200,14 +201,21 @@ public static class GetDownloadUrl
                                     .First()
                                     .ToList();
 
-                                var reduced = ReduceFrameworkDependencyFiles(
-                                    latestGroup
-                                        .Select(u => (Update: u, Url: string.Empty))
-                                        .ToList(),
-                                    archRid
-                                );
+                                if (ignoreDependencyFilter)
+                                {
+                                    requiredDepUpdates.AddRange(latestGroup);
+                                }
+                                else
+                                {
+                                    var reduced = ReduceFrameworkDependencyFiles(
+                                        latestGroup
+                                            .Select(u => (Update: u, Url: string.Empty))
+                                            .ToList(),
+                                        archRid
+                                    );
 
-                                requiredDepUpdates.AddRange(reduced.Select(r => r.Update));
+                                    requiredDepUpdates.AddRange(reduced.Select(r => r.Update));
+                                }
                             }
                         }
 

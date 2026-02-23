@@ -35,49 +35,307 @@
       >
         <StackPanel Margin="0" Orientation="Vertical">
           <!--  App Details Section  -->
-          <StackPanel VerticalAlignment="Top" Orientation="Horizontal">
-            <!--  App Icon  -->
-            <Border Width="80" Height="80" Margin="0,0,12,0" CornerRadius="10">
-              <Image Source="{x:Bind AppData.Logo.Url, Mode=OneWay}" Stretch="Fill" />
-            </Border>
-            <StackPanel>
-              <!--  App Name and Publisher  -->
-              <TextBlock
-                FontSize="26"
-                Style="{ThemeResource TitleTextBlockStyle}"
-                Text="{x:Bind AppData.Title, Mode=OneWay}"
-              />
-              <TextBlock
-                FontSize="14"
-                Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                Text="{x:Bind AppData.PublisherName, Mode=OneWay}"
-              />
-              <!--  Rating and Category  -->
-              <StackPanel
-                Margin="0,12,0,0"
-                Orientation="Horizontal"
-                Visibility="{x:Bind AppData.RatingCount, Converter={StaticResource HideElementConverter}, Mode=OneWay}"
-              >
+          <Grid>
+            <StackPanel VerticalAlignment="Top" Orientation="Horizontal">
+              <!--  App Icon  -->
+              <Border Width="80" Height="80" Margin="0,0,12,0" CornerRadius="10">
+                <Image Source="{x:Bind AppData.Logo.Url, Mode=OneWay}" Stretch="Fill" />
+              </Border>
+              <StackPanel>
+                <!--  App Name and Publisher  -->
                 <TextBlock
-                  Margin="4,0"
-                  FontSize="14"
-                  Text="{x:Bind AppData.Rating, Mode=OneWay, Converter={StaticResource OneDecimalPlaceConverter}}"
-                />
-                <FontIcon
-                  FontSize="12"
-                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                  Glyph=""
+                  FontSize="26"
+                  Style="{ThemeResource TitleTextBlockStyle}"
+                  Text="{x:Bind AppData.Title, Mode=OneWay}"
                 />
                 <TextBlock
-                  Margin="8,0"
                   FontSize="14"
-                  Foreground="{ThemeResource DividerStrokeColorDefaultBrush}"
-                  Text="|"
+                  Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                  Text="{x:Bind AppData.PublisherName, Mode=OneWay}"
                 />
-                <TextBlock FontSize="14" Text="{x:Bind AppData.RatingCount, Mode=OneWay}" />
+                <!--  Rating and Category  -->
+                <StackPanel
+                  Margin="0,12,0,0"
+                  Orientation="Horizontal"
+                  Visibility="{x:Bind AppData.RatingCount, Converter={StaticResource HideElementConverter}, Mode=OneWay}"
+                >
+                  <TextBlock
+                    Margin="4,0"
+                    FontSize="14"
+                    Text="{x:Bind AppData.Rating, Mode=OneWay, Converter={StaticResource OneDecimalPlaceConverter}}"
+                  />
+                  <FontIcon
+                    FontSize="12"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Glyph=""
+                  />
+                  <TextBlock
+                    Margin="8,0"
+                    FontSize="14"
+                    Foreground="{ThemeResource DividerStrokeColorDefaultBrush}"
+                    Text="|"
+                  />
+                  <TextBlock FontSize="14" Text="{x:Bind AppData.RatingCount, Mode=OneWay}" />
+                </StackPanel>
               </StackPanel>
             </StackPanel>
-          </StackPanel>
+            <!--  More Options Button  -->
+            <Button
+              x:Name="MoreOptionsButton"
+              HorizontalAlignment="Right"
+              VerticalAlignment="Top"
+              Background="Transparent"
+              BorderBrush="Transparent"
+              BorderThickness="0"
+            >
+              <FontIcon FontSize="16" Glyph="" />
+              <Button.Flyout>
+                <MenuFlyout
+                  FlyoutBase.ShouldConstrainToRootBounds="True"
+                  Opening="MoreOptionsFlyout_Opening"
+                  Placement="Bottom"
+                >
+                  <MenuFlyout.MenuFlyoutPresenterStyle>
+                    <Style TargetType="MenuFlyoutPresenter">
+                      <Setter Property="Padding" Value="0,4" />
+                    </Style>
+                  </MenuFlyout.MenuFlyoutPresenterStyle>
+                  <!--  Checkbox-style toggle: custom template for consistent height/margin  -->
+                  <ToggleMenuFlyoutItem x:Name="IgnoreDependencyFilterToggle" Text="Bypass Filters">
+                    <ToggleMenuFlyoutItem.Style>
+                      <Style TargetType="ToggleMenuFlyoutItem">
+                        <Setter Property="Template">
+                          <Setter.Value>
+                            <ControlTemplate TargetType="ToggleMenuFlyoutItem">
+                              <Grid
+                                x:Name="LayoutRoot"
+                                MinHeight="32"
+                                Padding="12,0"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="4"
+                              >
+                                <CheckBox
+                                  x:Name="CheckBoxControl"
+                                  Margin="0"
+                                  HorizontalAlignment="Left"
+                                  VerticalAlignment="Center"
+                                  Content="{TemplateBinding Text}"
+                                  FontSize="{TemplateBinding FontSize}"
+                                  Foreground="{TemplateBinding Foreground}"
+                                  IsChecked="{Binding IsChecked, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                                  IsHitTestVisible="False"
+                                />
+                                <VisualStateManager.VisualStateGroups>
+                                  <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal">
+                                      <Storyboard>
+                                        <ObjectAnimationUsingKeyFrames
+                                          Storyboard.TargetName="LayoutRoot"
+                                          Storyboard.TargetProperty="Background"
+                                        >
+                                          <DiscreteObjectKeyFrame KeyTime="0" Value="Transparent" />
+                                        </ObjectAnimationUsingKeyFrames>
+                                      </Storyboard>
+                                    </VisualState>
+                                    <VisualState x:Name="PointerOver">
+                                      <Storyboard>
+                                        <ObjectAnimationUsingKeyFrames
+                                          Storyboard.TargetName="LayoutRoot"
+                                          Storyboard.TargetProperty="Background"
+                                        >
+                                          <DiscreteObjectKeyFrame
+                                            KeyTime="0"
+                                            Value="{ThemeResource MenuFlyoutItemBackgroundPointerOver}"
+                                          />
+                                        </ObjectAnimationUsingKeyFrames>
+                                      </Storyboard>
+                                    </VisualState>
+                                    <VisualState x:Name="Pressed">
+                                      <Storyboard>
+                                        <ObjectAnimationUsingKeyFrames
+                                          Storyboard.TargetName="LayoutRoot"
+                                          Storyboard.TargetProperty="Background"
+                                        >
+                                          <DiscreteObjectKeyFrame
+                                            KeyTime="0"
+                                            Value="{ThemeResource MenuFlyoutItemBackgroundPressed}"
+                                          />
+                                        </ObjectAnimationUsingKeyFrames>
+                                      </Storyboard>
+                                    </VisualState>
+                                    <VisualState x:Name="Disabled">
+                                      <Storyboard>
+                                        <ObjectAnimationUsingKeyFrames
+                                          Storyboard.TargetName="LayoutRoot"
+                                          Storyboard.TargetProperty="Background"
+                                        >
+                                          <DiscreteObjectKeyFrame KeyTime="0" Value="Transparent" />
+                                        </ObjectAnimationUsingKeyFrames>
+                                      </Storyboard>
+                                    </VisualState>
+                                    <VisualState x:Name="Checked">
+                                      <Storyboard>
+                                        <ObjectAnimationUsingKeyFrames
+                                          Storyboard.TargetName="LayoutRoot"
+                                          Storyboard.TargetProperty="Background"
+                                        >
+                                          <DiscreteObjectKeyFrame KeyTime="0" Value="Transparent" />
+                                        </ObjectAnimationUsingKeyFrames>
+                                      </Storyboard>
+                                    </VisualState>
+                                    <VisualState x:Name="CheckedPointerOver">
+                                      <Storyboard>
+                                        <ObjectAnimationUsingKeyFrames
+                                          Storyboard.TargetName="LayoutRoot"
+                                          Storyboard.TargetProperty="Background"
+                                        >
+                                          <DiscreteObjectKeyFrame
+                                            KeyTime="0"
+                                            Value="{ThemeResource MenuFlyoutItemBackgroundPointerOver}"
+                                          />
+                                        </ObjectAnimationUsingKeyFrames>
+                                      </Storyboard>
+                                    </VisualState>
+                                    <VisualState x:Name="CheckedPressed">
+                                      <Storyboard>
+                                        <ObjectAnimationUsingKeyFrames
+                                          Storyboard.TargetName="LayoutRoot"
+                                          Storyboard.TargetProperty="Background"
+                                        >
+                                          <DiscreteObjectKeyFrame
+                                            KeyTime="0"
+                                            Value="{ThemeResource MenuFlyoutItemBackgroundPressed}"
+                                          />
+                                        </ObjectAnimationUsingKeyFrames>
+                                      </Storyboard>
+                                    </VisualState>
+                                    <VisualState x:Name="CheckedDisabled">
+                                      <Storyboard>
+                                        <ObjectAnimationUsingKeyFrames
+                                          Storyboard.TargetName="LayoutRoot"
+                                          Storyboard.TargetProperty="Background"
+                                        >
+                                          <DiscreteObjectKeyFrame KeyTime="0" Value="Transparent" />
+                                        </ObjectAnimationUsingKeyFrames>
+                                      </Storyboard>
+                                    </VisualState>
+                                  </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                              </Grid>
+                            </ControlTemplate>
+                          </Setter.Value>
+                        </Setter>
+                      </Style>
+                    </ToggleMenuFlyoutItem.Style>
+                  </ToggleMenuFlyoutItem>
+                  <MenuFlyoutSeparator />
+                  <!--  Button-style item: custom template removes icon column, centers text  -->
+                  <MenuFlyoutItem
+                    x:Name="CheckUpdate"
+                    Click="CheckUpdate_Click"
+                    Text="Check Updates"
+                  >
+                    <MenuFlyoutItem.Style>
+                      <Style TargetType="MenuFlyoutItem">
+                        <Setter Property="Template">
+                          <Setter.Value>
+                            <ControlTemplate TargetType="MenuFlyoutItem">
+                              <Grid
+                                x:Name="LayoutRoot"
+                                MinHeight="32"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="4"
+                              >
+                                <TextBlock
+                                  x:Name="TextBlock"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"
+                                  FontSize="{TemplateBinding FontSize}"
+                                  Foreground="{TemplateBinding Foreground}"
+                                  Text="{TemplateBinding Text}"
+                                />
+                                <VisualStateManager.VisualStateGroups>
+                                  <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal">
+                                      <Storyboard>
+                                        <ObjectAnimationUsingKeyFrames
+                                          Storyboard.TargetName="LayoutRoot"
+                                          Storyboard.TargetProperty="Background"
+                                        >
+                                          <DiscreteObjectKeyFrame KeyTime="0" Value="Transparent" />
+                                        </ObjectAnimationUsingKeyFrames>
+                                      </Storyboard>
+                                    </VisualState>
+                                    <VisualState x:Name="PointerOver">
+                                      <Storyboard>
+                                        <ObjectAnimationUsingKeyFrames
+                                          Storyboard.TargetName="LayoutRoot"
+                                          Storyboard.TargetProperty="Background"
+                                        >
+                                          <DiscreteObjectKeyFrame
+                                            KeyTime="0"
+                                            Value="{ThemeResource MenuFlyoutItemBackgroundPointerOver}"
+                                          />
+                                        </ObjectAnimationUsingKeyFrames>
+                                        <ObjectAnimationUsingKeyFrames
+                                          Storyboard.TargetName="TextBlock"
+                                          Storyboard.TargetProperty="Foreground"
+                                        >
+                                          <DiscreteObjectKeyFrame
+                                            KeyTime="0"
+                                            Value="{ThemeResource MenuFlyoutItemForegroundPointerOver}"
+                                          />
+                                        </ObjectAnimationUsingKeyFrames>
+                                      </Storyboard>
+                                    </VisualState>
+                                    <VisualState x:Name="Pressed">
+                                      <Storyboard>
+                                        <ObjectAnimationUsingKeyFrames
+                                          Storyboard.TargetName="LayoutRoot"
+                                          Storyboard.TargetProperty="Background"
+                                        >
+                                          <DiscreteObjectKeyFrame
+                                            KeyTime="0"
+                                            Value="{ThemeResource MenuFlyoutItemBackgroundPressed}"
+                                          />
+                                        </ObjectAnimationUsingKeyFrames>
+                                        <ObjectAnimationUsingKeyFrames
+                                          Storyboard.TargetName="TextBlock"
+                                          Storyboard.TargetProperty="Foreground"
+                                        >
+                                          <DiscreteObjectKeyFrame
+                                            KeyTime="0"
+                                            Value="{ThemeResource MenuFlyoutItemForegroundPressed}"
+                                          />
+                                        </ObjectAnimationUsingKeyFrames>
+                                      </Storyboard>
+                                    </VisualState>
+                                    <VisualState x:Name="Disabled">
+                                      <Storyboard>
+                                        <ObjectAnimationUsingKeyFrames
+                                          Storyboard.TargetName="TextBlock"
+                                          Storyboard.TargetProperty="Foreground"
+                                        >
+                                          <DiscreteObjectKeyFrame
+                                            KeyTime="0"
+                                            Value="{ThemeResource MenuFlyoutItemForegroundDisabled}"
+                                          />
+                                        </ObjectAnimationUsingKeyFrames>
+                                      </Storyboard>
+                                    </VisualState>
+                                  </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                              </Grid>
+                            </ControlTemplate>
+                          </Setter.Value>
+                        </Setter>
+                      </Style>
+                    </MenuFlyoutItem.Style>
+                  </MenuFlyoutItem>
+                </MenuFlyout>
+              </Button.Flyout>
+            </Button>
+          </Grid>
           <!--  Short Description  -->
           <Grid VerticalAlignment="Top">
             <Grid.ColumnDefinitions>
@@ -100,8 +358,8 @@
         <!--  install/open/update button  -->
         <SplitButton
           x:Name="InstallButton"
-          MinWidth="120"
           Height="40"
+          MinWidth="120"
           Background="{ThemeResource AccentFillColorDefaultBrush}"
           Click="InstallButton_Click"
           Content="Install"
@@ -109,7 +367,10 @@
           Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
         >
           <SplitButton.Flyout>
-            <MenuFlyout x:Name="InstallButtonFlyout" />
+            <MenuFlyout
+              x:Name="InstallButtonFlyout"
+              FlyoutBase.ShouldConstrainToRootBounds="True"
+            />
           </SplitButton.Flyout>
         </SplitButton>
         <!--  Progress button Section  -->

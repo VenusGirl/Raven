@@ -706,6 +706,30 @@ public sealed partial class AppPage : Page
         );
     }
 
+    private void MoreOptionsFlyout_Opening(object? sender, object e)
+    {
+        var width = MoreOptionsButton.ActualWidth;
+        if (width <= 0)
+            return;
+        if (sender is MenuFlyout flyout)
+        {
+            foreach (var item in flyout.Items.OfType<MenuFlyoutItem>())
+                item.MinWidth = width;
+        }
+    }
+
+    private async void CheckUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = "Check Update",
+            Content = "Checking for updates...",
+            CloseButtonText = "OK",
+            XamlRoot = this.Content.XamlRoot,
+        };
+        await dialog.ShowAsync();
+    }
+
     private static bool IsInstallablePackage(string path)
     {
         var ext = Path.GetExtension(path);
@@ -850,7 +874,8 @@ public sealed partial class AppPage : Page
                 urls = await GetDownloadUrl.fetch(
                     productId,
                     _currentProductInfo.InstallerType,
-                    _downloadCts.Token
+                    _downloadCts.Token,
+                    ignoreDependencyFilter: IgnoreDependencyFilterToggle.IsChecked
                 );
             }
             catch (OperationCanceledException)
