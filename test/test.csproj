@@ -21,6 +21,7 @@
     <None Remove="Views\CardViewControl.xaml" />
     <None Remove="Views\DownloadsPage.xaml" />
     <None Remove="Views\InstallationsPage.xaml" />
+    <None Remove="Views\UpdatesPage.xaml" />
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="$(ApplicationManifest)" />
@@ -49,6 +50,9 @@
     <None Update="test3.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <Page Update="Views\UpdatesPage.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Update="Views\DownloadsPage.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>

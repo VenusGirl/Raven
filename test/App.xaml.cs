@@ -1,9 +1,7 @@
 ﻿using System.Diagnostics;
-
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.UI.Xaml;
-
 using test.Activation;
 using test.Contracts.Services;
 using test.Core.Contracts.Services;
@@ -121,7 +119,9 @@ public partial class App : Application
         base.OnLaunched(args);
 
         // Initialize DownloadManagerService with the dispatcher queue
-        DownloadManagerService.Instance.Initialize(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread());
+        DownloadManagerService.Instance.Initialize(
+            Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread()
+        );
 
         await App.GetService<IActivationService>().ActivateAsync(args);
         // Add other services

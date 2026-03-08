@@ -4,7 +4,5 @@ namespace test.ViewModels;
 
 public partial class UpdatesViewModel : ObservableRecipient
 {
-    public UpdatesViewModel()
-    {
-    }
+    public UpdatesViewModel() { }
 }
