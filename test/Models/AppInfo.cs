@@ -87,8 +87,24 @@ public partial class AppInfo : INotifyPropertyChanged
             {
                 _logo = value;
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(LogoUrl));
             }
         }
+    }
+
+    private string? _quickLogoUrl;
+
+    /// <summary>Returns the logo URL from the loaded product, falling back to a pre-fill URL set during navigation.</summary>
+    public string? LogoUrl =>
+        !string.IsNullOrEmpty(_logo?.Url) ? _logo!.Url :
+        !string.IsNullOrEmpty(_quickLogoUrl) ? _quickLogoUrl :
+        null;
+
+    public void SetQuickLogo(string? url)
+    {
+        _quickLogoUrl = url;
+        if (_logo == null)
+            OnPropertyChanged(nameof(LogoUrl));
     }
 
     private List<Image> _screenshots;

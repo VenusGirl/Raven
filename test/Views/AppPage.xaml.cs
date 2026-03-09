@@ -49,6 +49,8 @@ public sealed partial class AppPage : Page
         _productLoadCts = new CancellationTokenSource();
         _overrideAction = null;
 
+        AppData.SetQuickLogo(e.Parameter is DownloadItem { LogoUrl: { } qlu } ? qlu : null);
+
         var (productInfo, productId, installerType) = e.Parameter switch
         {
             ProductData p => (p, (string?)null, InstallerType.Unknown),

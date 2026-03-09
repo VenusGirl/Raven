@@ -84,7 +84,7 @@
                 VerticalAlignment="Top"
                 CornerRadius="8"
               >
-                <Image Source="{x:Bind LogoUrl, Mode=OneWay}" Stretch="UniformToFill" />
+                <Image Source="{Binding LogoUrl, Mode=OneWay}" Stretch="UniformToFill" />
               </Border>
               <!--  Title + status / progress  -->
               <Grid Grid.Row="0" Grid.Column="1" VerticalAlignment="Top" RowSpacing="6">

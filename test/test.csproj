@@ -21,6 +21,8 @@
     <None Remove="Views\CardViewControl.xaml" />
     <None Remove="Views\DownloadsPage.xaml" />
     <None Remove="Views\InstallationsPage.xaml" />
+  </ItemGroup>
+  <ItemGroup>
     <None Remove="Views\UpdatesPage.xaml" />
   </ItemGroup>
   <ItemGroup>

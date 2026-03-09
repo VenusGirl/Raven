@@ -99,7 +99,7 @@
             <StackPanel VerticalAlignment="Top" Orientation="Horizontal">
               <!--  App Icon  -->
               <Border Width="80" Height="80" Margin="0,0,12,0" CornerRadius="10">
-                <Image Source="{x:Bind AppData.Logo.Url, Mode=OneWay}" Stretch="Fill" />
+                <Image Source="{x:Bind AppData.LogoUrl, Mode=OneWay}" Stretch="Fill" />
               </Border>
               <StackPanel>
                 <!--  App Name and Publisher  -->

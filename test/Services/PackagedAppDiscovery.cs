@@ -65,6 +65,56 @@ public static class PackagedAppDiscovery
         }
     }
 
+    public static List<(string PackageFamilyName, string InstalledVersion, string DisplayName)>
+        GetAllInstalledStoreApps()
+    {
+        var pm = new PackageManager();
+        var results = new List<(string PackageFamilyName, string InstalledVersion, string DisplayName)>();
+
+        IEnumerable<Windows.ApplicationModel.Package>? packages = null;
+        try
+        {
+            packages = pm.FindPackagesForUser(string.Empty);
+        }
+        catch
+        {
+            return results;
+        }
+
+        foreach (var pkg in packages)
+        {
+            try
+            {
+                if (pkg.IsFramework) continue;
+                if (pkg.IsResourcePackage) continue;
+                if (pkg.SignatureKind != Windows.ApplicationModel.PackageSignatureKind.Store) continue;
+
+                var pfn = pkg.Id?.FamilyName;
+                if (string.IsNullOrWhiteSpace(pfn)) continue;
+
+                var v = pkg.Id?.Version;
+                var versionStr = v == null
+                    ? "0.0.0.0"
+                    : $"{v.Value.Major}.{v.Value.Minor}.{v.Value.Build}.{v.Value.Revision}";
+
+                string displayName;
+                try { displayName = pkg.DisplayName; }
+                catch { displayName = pkg.Id?.Name ?? pfn; }
+
+                results.Add((pfn, versionStr, displayName));
+            }
+            catch
+            {
+                continue;
+            }
+        }
+
+        return results
+            .GroupBy(r => r.PackageFamilyName, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.OrderByDescending(x => x.InstalledVersion).First())
+            .ToList();
+    }
+
     public static async Task<bool> TryLaunchAsync(string? packageFamilyName)
     {
         var result = await TryLaunchDetailedAsync(packageFamilyName);

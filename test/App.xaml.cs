@@ -91,8 +91,8 @@ public partial class App : Application
 
                     services.AddTransient<InstallationsPage>();
                     services.AddSingleton<InstallationsViewModel>();
-                    services.AddTransient<UpdatesViewModel>();
                     services.AddTransient<UpdatesPage>();
+                    services.AddSingleton<UpdatesViewModel>();
 
                     // Configuration
                     services.Configure<LocalSettingsOptions>(
@@ -110,8 +110,10 @@ public partial class App : Application
         Microsoft.UI.Xaml.UnhandledExceptionEventArgs e
     )
     {
-        // TODO: Log and handle exceptions as appropriate.
-        // https://docs.microsoft.com/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.application.unhandledexception.
+        Debug.WriteLine($"[App] UNHANDLED EXCEPTION: {e.Exception?.GetType().FullName}");
+        Debug.WriteLine($"[App] Message   : {e.Exception?.Message}");
+        Debug.WriteLine($"[App] Inner     : {e.Exception?.InnerException?.Message}");
+        Debug.WriteLine($"[App] StackTrace:\n{e.Exception?.StackTrace}");
     }
 
     protected override async void OnLaunched(LaunchActivatedEventArgs args)

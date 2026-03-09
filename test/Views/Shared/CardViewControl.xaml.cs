@@ -228,6 +228,13 @@ public sealed partial class CardViewControl : UserControl
             Debug.WriteLine(errorText);
         }
 
+        // Control may have been unloaded while the await was in progress
+        if (ViewModel == null)
+        {
+            isLoadingMore = false;
+            return;
+        }
+
         if (success == true)
         {
             LoadingOverlay.Visibility = Visibility.Collapsed;
