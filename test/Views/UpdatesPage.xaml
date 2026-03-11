@@ -256,7 +256,7 @@
                     </StackPanel>
                   </Grid>
                 </Grid>
-                <!--  Cancel button (visible while update is in progress)  -->
+                <!--  Cancel button (visible while active but not yet cancelling)  -->
                 <Button
                   Grid.Column="3"
                   VerticalAlignment="Center"
@@ -264,7 +264,7 @@
                   Style="{StaticResource IconButtonStyle}"
                   Tag="{x:Bind ProductId}"
                   ToolTipService.ToolTip="Cancel update"
-                  Visibility="{x:Bind IsProgressVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                  Visibility="{x:Bind IsCancelButtonVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                 >
                   <FontIcon FontSize="12" Glyph="" />
                 </Button>

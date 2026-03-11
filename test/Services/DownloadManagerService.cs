@@ -374,17 +374,6 @@ public class DownloadManagerService
             }
         }
 
-        if (
-            item?.Status == DownloadStatus.Installing
-            || item?.Status == DownloadStatus.Completed
-            || (item?.Status == DownloadStatus.Cancelling && item.DownloadedFilePaths.Count > 0)
-        )
-        {
-            UpdateDownloadStatusText(productId, null);
-            UpdateDownloadStatus(productId, DownloadStatus.Completed);
-            return;
-        }
-
         UpdateDownloadStatusText(productId, "Cancelling");
         UpdateDownloadStatus(productId, DownloadStatus.Cancelling);
     }

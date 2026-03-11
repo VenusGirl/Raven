@@ -88,7 +88,19 @@ public sealed partial class UpdatesPage : Page
     private void CancelUpdateButton_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
         if (sender is FrameworkElement { Tag: string productId })
+        {
             DownloadManagerService.Instance.CancelDownload(productId);
+
+            // For items queued as Pending but not yet started (DownloadItem not yet created),
+            // CancelDownload cannot update the visual state. Set Cancelling directly so the
+            // user sees immediate feedback.
+            if (DownloadManagerService.Instance.GetDownload(productId) is null)
+            {
+                var updateItem = ViewModel.AvailableUpdates.FirstOrDefault(x => x.ProductId == productId);
+                if (updateItem is { Status: DownloadStatus.Pending })
+                    updateItem.Status = DownloadStatus.Cancelling;
+            }
+        }
     }
 
     private void ActionButton_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)

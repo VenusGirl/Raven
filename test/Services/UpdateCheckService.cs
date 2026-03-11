@@ -162,7 +162,8 @@ public static class UpdateCheckService
             var pending = queue.Skip(batchStart + INSTALL_BATCH_SIZE).ToList();
             foreach (var p in pending)
             {
-                downloadManager.RunOnUIThread(() => p.Status = DownloadStatus.Pending);
+                if (!downloadManager.IsCancellationRequested(p.ProductId))
+                    downloadManager.RunOnUIThread(() => p.Status = DownloadStatus.Pending);
             }
 
             await Task.WhenAll(
@@ -206,12 +207,15 @@ public static class UpdateCheckService
 
         var unsubscribeDownloadItem = SubscribeToDownloadItem(item, downloadItem, downloadManager);
 
-        // Show indeterminate bar with animated dots while fetching the download URL.
-        // DownloadHelper.StartDownloadAsync switches status to Downloading and starts
-        // its own animator once bytes start flowing.
-        downloadManager.UpdateDownloadStatus(item.ProductId, DownloadStatus.Pending);
-        var pendingAnimator = new DownloadItemStatusAnimator(dispatcher);
-        pendingAnimator.Start(downloadItem, "Fetching download URLs");
+        // Only show Pending and start the animator when the item hasn't already been
+        // cancelled (e.g. cancel was clicked before this batch started).
+        DownloadItemStatusAnimator? pendingAnimator = null;
+        if (!downloadManager.IsCancellationRequested(item.ProductId))
+        {
+            downloadManager.UpdateDownloadStatus(item.ProductId, DownloadStatus.Pending);
+            pendingAnimator = new DownloadItemStatusAnimator(dispatcher);
+            pendingAnimator.Start(downloadItem, "Fetching download URLs");
+        }
 
         var itemCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         downloadManager.RegisterCancellationToken(item.ProductId, itemCts);
@@ -225,24 +229,27 @@ public static class UpdateCheckService
             );
 
             // Stop pending animator before StartDownloadAsync starts its own.
-            pendingAnimator.Stop(downloadItem);
+            pendingAnimator?.Stop(downloadItem);
 
             if (fileEntry == null)
             {
+                downloadManager.UpdateDownloadStatus(item.ProductId, DownloadStatus.Failed);
                 downloadManager.RunOnUIThread(() => item.Status = DownloadStatus.Failed);
-                return;
             }
-
-            var uiUpdateService = new UIUpdateService(dispatcher);
-            await DownloadHelper.StartDownloadAsync(
-                fileEntry,
-                item.ProductId,
-                itemCts.Token,
-                uiUpdateService
-            );
+            else
+            {
+                var uiUpdateService = new UIUpdateService(dispatcher);
+                await DownloadHelper.StartDownloadAsync(
+                    fileEntry,
+                    item.ProductId,
+                    itemCts.Token,
+                    uiUpdateService
+                );
+            }
         }
         catch (OperationCanceledException)
         {
+            downloadManager.UpdateDownloadStatus(item.ProductId, DownloadStatus.Cancelled);
             downloadManager.RunOnUIThread(() => item.Status = DownloadStatus.Cancelled);
         }
         catch (Exception ex)
@@ -250,11 +257,12 @@ public static class UpdateCheckService
             Debug.WriteLine(
                 $"[UpdateCheckService] Update failed for {item.ProductId}: {ex.Message}"
             );
+            downloadManager.UpdateDownloadStatus(item.ProductId, DownloadStatus.Failed);
             downloadManager.RunOnUIThread(() => item.Status = DownloadStatus.Failed);
         }
         finally
         {
-            pendingAnimator.Stop(downloadItem); // no-op if already stopped above
+            pendingAnimator?.Stop(downloadItem); // no-op if already stopped above
             downloadManager.UnregisterCancellationToken(item.ProductId);
             itemCts.Dispose();
             unsubscribeDownloadItem();
