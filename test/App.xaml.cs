@@ -85,7 +85,7 @@ public partial class App : Application
                     services.AddTransient<ShellViewModel>();
 
                     // TemplateStudio: Added Advanced Search View and ViewModel
-                    services.AddTransient<Advanced_SearchViewModel>();
+                    services.AddSingleton<Advanced_SearchViewModel>();
                     services.AddTransient<Advanced_SearchPage>();
 
                     services.AddTransient<MainPage>();
