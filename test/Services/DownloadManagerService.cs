@@ -885,6 +885,75 @@ public class DownloadManagerService
         }
     }
 
+    public void ResetAllDownloads(bool deleteFiles = true)
+    {
+        List<DownloadItem> snapshot;
+        lock (_lock)
+        {
+            snapshot = Downloads.ToList();
+        }
+
+        foreach (var item in snapshot)
+        {
+            if (item.Status is DownloadStatus.Downloading or DownloadStatus.Pending or DownloadStatus.Installing)
+            {
+                CancelDownload(item.ProductId);
+            }
+
+            if (deleteFiles)
+            {
+                DeleteDownloadedFiles(item);
+            }
+        }
+
+        RunOnUIThread(() =>
+        {
+            lock (_lock)
+            {
+                Downloads.Clear();
+                DownloadedProductIds.Clear();
+            }
+        });
+
+        _cancellationTokens.Clear();
+        _cancellationRequested.Clear();
+
+        DeleteDownloadMetadataFile();
+        DeleteDownloadsRootFolder();
+        SaveDownloadsThrottled(force: true);
+    }
+
+    private void DeleteDownloadMetadataFile()
+    {
+        try
+        {
+            if (File.Exists(_downloadDataPath))
+            {
+                File.Delete(_downloadDataPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error deleting download metadata file: {ex.Message}");
+        }
+    }
+
+    private static void DeleteDownloadsRootFolder()
+    {
+        try
+        {
+            var baseDownloadsDir = Path.Combine(AppContext.BaseDirectory, "downloads");
+            if (Directory.Exists(baseDownloadsDir))
+            {
+                Directory.Delete(baseDownloadsDir, recursive: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error deleting downloads root folder: {ex.Message}");
+        }
+    }
+
     private static void DeleteDownloadedFiles(DownloadItem item)
     {
         // Prefer deleting the explicit download folder if set.

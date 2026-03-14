@@ -117,21 +117,12 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
-
-  <!-- ================================================================
-       APP METADATA
-       ================================================================ -->
   <data name="AppDisplayName" xml:space="preserve">
     <value>Raven</value>
   </data>
   <data name="AppDescription" xml:space="preserve">
     <value>A Windows Store app browser and package manager.</value>
   </data>
-
-  <!-- ================================================================
-       SHELL / NAVIGATION
-       x:Uid keys: set NavigationViewItem.Content and AutoSuggestBox.PlaceholderText
-       ================================================================ -->
   <data name="Shell_Main.Content" xml:space="preserve">
     <value>Home</value>
   </data>
@@ -159,16 +150,8 @@
   <data name="Shell_AppTitleBarText.Text" xml:space="preserve">
     <value>Raven</value>
   </data>
-
-  <!-- ================================================================
-       SETTINGS PAGE
-       x:Uid keys: Settings_* and SettingsPage_*
-       ================================================================ -->
   <data name="Settings_Title.Text" xml:space="preserve">
     <value>Settings</value>
-  </data>
-  <data name="Settings_Personalization.Text" xml:space="preserve">
-    <value>Personalization</value>
   </data>
   <data name="Settings_Theme.Text" xml:space="preserve">
     <value>Theme</value>
@@ -180,7 +163,7 @@
     <value>Dark</value>
   </data>
   <data name="Settings_Theme_Default.Content" xml:space="preserve">
-    <value>Default</value>
+    <value>System Default</value>
   </data>
   <data name="Settings_LocaleAndRegion.Text" xml:space="preserve">
     <value>Language &amp; Region</value>
@@ -191,23 +174,39 @@
   <data name="Settings_Market.Text" xml:space="preserve">
     <value>Market (Region)</value>
   </data>
+  <data name="Settings_Reset.Text" xml:space="preserve">
+    <value>Reset</value>
+  </data>
+  <data name="Settings_ResetDescription.Text" xml:space="preserve">
+    <value>Reset Raven to default settings.</value>
+  </data>
+  <data name="Settings_ResetButton.Content" xml:space="preserve">
+    <value>Reset app</value>
+  </data>
+  <data name="Settings_ResetDialogTitle" xml:space="preserve">
+    <value>Reset app data?</value>
+  </data>
+  <data name="Settings_ResetDialogContent" xml:space="preserve">
+    <value>This will remove all downloaded files and cached download data, and restore language and region to defaults. This action cannot be undone.</value>
+  </data>
+  <data name="Settings_ResetDialogPrimary" xml:space="preserve">
+    <value>Reset</value>
+  </data>
+  <data name="Settings_ResetDialogCancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
   <data name="Settings_About.Text" xml:space="preserve">
     <value>About this application</value>
   </data>
   <data name="Settings_AboutDescription.Text" xml:space="preserve">
-    <value>A fast, open-source Windows Store app browser and package downloader.</value>
+    <value>An open-source, privacy-oriented alternative client for the Microsoft Store to browse, download, install, and update Store apps.</value>
   </data>
-  <data name="SettingsPage_PrivacyTermsLink.Content" xml:space="preserve">
-    <value>Privacy Statement</value>
+  <data name="SettingsPage_GitHubRepoLink.Content" xml:space="preserve">
+    <value>GitHub repository</value>
   </data>
-  <data name="SettingsPage_PrivacyTermsLink.NavigateUri" xml:space="preserve">
-    <value>https://YourPrivacyUrlGoesHere/</value>
+  <data name="SettingsPage_LicenseLink.Content" xml:space="preserve">
+    <value>License</value>
   </data>
-
-  <!-- ================================================================
-       CARD VIEW CONTROL  (Shared/CardViewControl.xaml)
-       x:Uid keys: CardView_*
-       ================================================================ -->
   <data name="CardView_Loading.Text" xml:space="preserve">
     <value>Loading</value>
   </data>
@@ -229,8 +228,6 @@
   <data name="CardView_Error_OpenFailed" xml:space="preserve">
     <value>Failed to open item: {0}</value>
   </data>
-
-  <!-- MainViewModel — filter ComboBox items (code: "Filter_*".GetLocalized()) -->
   <data name="Filter_Apps" xml:space="preserve">
     <value>Apps</value>
   </data>
@@ -252,18 +249,12 @@
   <data name="Filter_BestSelling" xml:space="preserve">
     <value>Best Selling</value>
   </data>
-
-  <!-- ================================================================
-       ADVANCED SEARCH PAGE  (Views/Advanced_SearchPage.xaml)
-       x:Uid keys: AdvancedSearch_*
-       ================================================================ -->
   <data name="AdvancedSearch_Header.Text" xml:space="preserve">
     <value>Advanced Search</value>
   </data>
   <data name="AdvancedSearch_SearchHint.Text" xml:space="preserve">
     <value>Search by URL, product ID, or package family name</value>
   </data>
-  <!-- Search type ComboBox items -->
   <data name="AdvancedSearch_TypeUrl.Content" xml:space="preserve">
     <value>URL</value>
   </data>
@@ -273,14 +264,12 @@
   <data name="AdvancedSearch_TypePfn.Content" xml:space="preserve">
     <value>Package Family Name</value>
   </data>
-  <!-- Search button and loading state -->
   <data name="AdvancedSearch_SearchBtn.Text" xml:space="preserve">
     <value>Search</value>
   </data>
   <data name="AdvancedSearch_LookingUp.Text" xml:space="preserve">
     <value>Looking up product</value>
   </data>
-  <!-- Info card: URL -->
   <data name="AdvancedSearch_UrlCard_Title.Text" xml:space="preserve">
     <value>URL</value>
   </data>
@@ -290,7 +279,6 @@
   <data name="AdvancedSearch_UrlCard_Example.Text" xml:space="preserve">
     <value>e.g. https://apps.microsoft.com/detail/9WZDNCRFHVJL</value>
   </data>
-  <!-- Info card: Product ID -->
   <data name="AdvancedSearch_ProductIdCard_Title.Text" xml:space="preserve">
     <value>Product ID</value>
   </data>
@@ -300,7 +288,6 @@
   <data name="AdvancedSearch_ProductIdCard_Example.Text" xml:space="preserve">
     <value>e.g. 9WZDNCRFHVJL</value>
   </data>
-  <!-- Info card: Package Family Name -->
   <data name="AdvancedSearch_PfnCard_Title.Text" xml:space="preserve">
     <value>Package Family Name</value>
   </data>
@@ -310,7 +297,6 @@
   <data name="AdvancedSearch_PfnCard_Example.Text" xml:space="preserve">
     <value>e.g. Microsoft.WindowsTerminal_8wekyb3d8bbwe</value>
   </data>
-  <!-- TextBox placeholder text (code: AdvancedSearch_Placeholder_*.GetLocalized()) -->
   <data name="AdvancedSearch_Placeholder_Url" xml:space="preserve">
     <value>https://apps.microsoft.com/detail/...</value>
   </data>
@@ -323,7 +309,6 @@
   <data name="AdvancedSearch_Placeholder_Default" xml:space="preserve">
     <value>Enter a value to search</value>
   </data>
-  <!-- Error messages (code: AdvancedSearch_Error_*.GetLocalized()) -->
   <data name="AdvancedSearch_Error_EmptyQuery" xml:space="preserve">
     <value>Please enter a value to search.</value>
   </data>
@@ -336,22 +321,15 @@
   <data name="AdvancedSearch_Error_FailedLookup" xml:space="preserve">
     <value>Failed to find product: {0}</value>
   </data>
-
-  <!-- ================================================================
-       APP PAGE DIALOGS AND STATUS  (Views/AppPage.xaml + .xaml.cs)
-       x:Uid keys: AppPage_*  |  Code keys (GetLocalized): AppPage_Error_*, AppPage_Manual_*, AppPage_Btn_*
-       ================================================================ -->
   <data name="AppPage_Loading.Text" xml:space="preserve">
     <value>Loading</value>
   </data>
-  <!-- Options menu -->
   <data name="AppPage_BypassFilters.Text" xml:space="preserve">
     <value>Bypass Filters</value>
   </data>
   <data name="AppPage_CheckUpdates.Text" xml:space="preserve">
     <value>Check Updates</value>
   </data>
-  <!-- Section headers -->
   <data name="AppPage_Screenshots.Text" xml:space="preserve">
     <value>Screenshots</value>
   </data>
@@ -361,7 +339,6 @@
   <data name="AppPage_MoreDetails.Text" xml:space="preserve">
     <value>More Details</value>
   </data>
-  <!-- Detail labels -->
   <data name="AppPage_AppSize.Text" xml:space="preserve">
     <value>App Size:</value>
   </data>
@@ -371,14 +348,12 @@
   <data name="AppPage_LastUpdated.Text" xml:space="preserve">
     <value>Last Updated:</value>
   </data>
-  <!-- Loading error dialog -->
   <data name="AppPage_Error_LoadTitle" xml:space="preserve">
     <value>Error loading app</value>
   </data>
   <data name="AppPage_Error_LoadMessage" xml:space="preserve">
     <value>Could not load app details: {0}</value>
   </data>
-  <!-- Check for updates dialog (plain code key — different from x:Uid AppPage_CheckUpdates.Text) -->
   <data name="AppPage_Error_CheckUpdatesTitle" xml:space="preserve">
     <value>Check Updates</value>
   </data>
@@ -388,7 +363,6 @@
   <data name="AppPage_Error_UpdateCheckFailed" xml:space="preserve">
     <value>Failed to check for updates: {0}</value>
   </data>
-  <!-- Download/install errors -->
   <data name="AppPage_Error_OperationCanceled" xml:space="preserve">
     <value>Operation canceled.</value>
   </data>
@@ -401,7 +375,6 @@
   <data name="AppPage_Error_FailedToInstall" xml:space="preserve">
     <value>Failed to install.</value>
   </data>
-  <!-- Open app errors — packaged -->
   <data name="AppPage_Error_UnableToOpenTitle" xml:space="preserve">
     <value>Unable to open app</value>
   </data>
@@ -414,7 +387,6 @@
   <data name="AppPage_Error_CantOpen" xml:space="preserve">
     <value>The app couldn't be opened. Try reinstalling the app.</value>
   </data>
-  <!-- Open app errors — Win32 -->
   <data name="AppPage_Error_NotInstalledWin32" xml:space="preserve">
     <value>This app was not found in the Windows uninstall registry. It may not be installed.</value>
   </data>
@@ -425,9 +397,10 @@
     <value>The app appears to be installed, but its launch file couldn't be found on disk. The app may have been moved or installed incorrectly.</value>
   </data>
   <data name="AppPage_Error_InstalledVersion" xml:space="preserve">
-    <value>&#x0A;&#x0A;Installed version: {0}</value>
+    <value>
+
+Installed version: {0}</value>
   </data>
-  <!-- Unpackaged installer dialog -->
   <data name="AppPage_Error_InstallerMissingTitle" xml:space="preserve">
     <value>Installer missing</value>
   </data>
@@ -446,18 +419,9 @@
   <data name="AppPage_Error_UnableToOpenInstallerTitle" xml:space="preserve">
     <value>Unable to open installer</value>
   </data>
-
-  <!-- ================================================================
-       COMMON  (shared across pages)
-       ================================================================ -->
   <data name="Common_Cancel" xml:space="preserve">
     <value>Cancel</value>
   </data>
-
-  <!-- ================================================================
-       DOWNLOAD / UPDATE STATUS STRINGS
-       Used by DownloadItem.StatusText and UpdateItem.StatusText (code: "Status_*".GetLocalized())
-       ================================================================ -->
   <data name="Status_Pending" xml:space="preserve">
     <value>Pending</value>
   </data>
@@ -476,23 +440,15 @@
   <data name="Status_Cancelled" xml:space="preserve">
     <value>Cancelled</value>
   </data>
-  <!-- DownloadItem-specific -->
   <data name="Status_Completed" xml:space="preserve">
     <value>Completed</value>
   </data>
   <data name="Status_Unknown" xml:space="preserve">
     <value>Unknown</value>
   </data>
-  <!-- UpdateItem-specific (Completed shown as "Updated") -->
   <data name="Status_Updated" xml:space="preserve">
     <value>Updated</value>
   </data>
-
-  <!-- ================================================================
-       DOWNLOAD HELPER  (Helpers/DownloadHelper.cs + Services/UpdateCheckService.cs)
-       Code keys (GetLocalized): Download_*
-       ================================================================ -->
-  <!-- Downloading progress status ({0}=current file, {1}=total files, {2}=file/files) -->
   <data name="Download_File" xml:space="preserve">
     <value>file</value>
   </data>
@@ -502,7 +458,6 @@
   <data name="Download_Status_DownloadingFiles" xml:space="preserve">
     <value>Downloading ({0}/{1}) {2}</value>
   </data>
-  <!-- Retry/stall messages -->
   <data name="Download_Status_Retry" xml:space="preserve">
     <value>Retry {0}/{1}</value>
   </data>
@@ -530,7 +485,6 @@
   <data name="Download_Status_FailedRetries" xml:space="preserve">
     <value>Error: Download failed after retries.</value>
   </data>
-  <!-- Final states -->
   <data name="Download_Status_Canceled" xml:space="preserve">
     <value>Download canceled.</value>
   </data>
@@ -543,12 +497,6 @@
   <data name="Download_Status_InstallFailed" xml:space="preserve">
     <value>Install failed: {0}</value>
   </data>
-
-  <!-- ================================================================
-       INSTALL HELPER DIALOGS  (Helpers/InstallHelper.cs)
-       Code keys (GetLocalized): Install_Error_*, Install_Btn_*, Common_*
-       ================================================================ -->
-  <!-- Friendly MSIX/deployment error messages -->
   <data name="Install_Error_ConflictingVersion" xml:space="preserve">
     <value>A newer or the same version is already installed.</value>
   </data>
@@ -567,18 +515,15 @@
   <data name="Install_Error_AdminRequired" xml:space="preserve">
     <value>This package includes a packaged service and must be installed with administrator privileges. Relaunch the app as administrator and try again.</value>
   </data>
-  <!-- Format strings: {0} = hresult hex, {1} = message -->
   <data name="Install_Error_GenericDeployment" xml:space="preserve">
     <value>Windows deployment error (0x{0:X8}). {1}</value>
   </data>
-  <!-- Format strings: {0} = exception message -->
   <data name="Install_Error_AccessDenied" xml:space="preserve">
     <value>Failed: Access denied. Try running as administrator or ensure sideloading policy allows app packages. {0}</value>
   </data>
   <data name="Install_Error_Generic" xml:space="preserve">
     <value>Failed: {0}</value>
   </data>
-  <!-- Dialog button labels -->
   <data name="Install_Btn_ForceInstall" xml:space="preserve">
     <value>Force install</value>
   </data>
@@ -588,12 +533,6 @@
   <data name="Common_OK" xml:space="preserve">
     <value>OK</value>
   </data>
-
-  <!-- ================================================================
-       DOWNLOADS PAGE  (Views/DownloadsPage.xaml + .xaml.cs)
-       x:Uid keys: DownloadsPage_*
-       Code keys (GetLocalized): Download_Status_*
-       ================================================================ -->
   <data name="DownloadsPage_Header.Text" xml:space="preserve">
     <value>Downloads</value>
   </data>
@@ -603,11 +542,9 @@
   <data name="DownloadsPage_Delete.Text" xml:space="preserve">
     <value>Delete</value>
   </data>
-  <!-- Cancel button tooltip in download item DataTemplate -->
   <data name="DownloadsPage_CancelBtn.ToolTipService.ToolTip" xml:space="preserve">
     <value>Cancel download</value>
   </data>
-  <!-- Status animation base strings -->
   <data name="Download_Status_Fetching" xml:space="preserve">
     <value>Fetching download URLs</value>
   </data>
@@ -620,12 +557,6 @@
   <data name="Download_Status_Cancelling" xml:space="preserve">
     <value>Cancelling</value>
   </data>
-
-  <!-- ================================================================
-       INSTALLATIONS PAGE  (Views/InstallationsPage.xaml + .xaml.cs)
-       x:Uid keys: InstallationsPage_*
-       Code keys (GetLocalized): InstallationsPage_FilePicker_Title, InstallationsPage_DragCaption
-       ================================================================ -->
   <data name="InstallationsPage_Header.Text" xml:space="preserve">
     <value>Install package</value>
   </data>
@@ -638,7 +569,6 @@
   <data name="InstallationsPage_InstallBtn.Content" xml:space="preserve">
     <value>Install</value>
   </data>
-  <!-- plain key for code-behind use (ResourceLoader cannot resolve dot-notation keys) -->
   <data name="InstallationsPage_InstallLabel" xml:space="preserve">
     <value>Install</value>
   </data>
@@ -651,7 +581,6 @@
   <data name="InstallationsPage_DragCaption" xml:space="preserve">
     <value>Drop to select package</value>
   </data>
-  <!-- Status text and dialog strings used from code -->
   <data name="Install_Status_Installing" xml:space="preserve">
     <value>Installing</value>
   </data>
@@ -664,7 +593,6 @@
   <data name="Install_Dialog_Title" xml:space="preserve">
     <value>Installation failed</value>
   </data>
-  <!-- File picker dialog -->
   <data name="InstallationsPage_FilePicker_Error" xml:space="preserve">
     <value>File picker error</value>
   </data>
@@ -677,12 +605,6 @@
   <data name="InstallationsPage_Filter_AllFiles" xml:space="preserve">
     <value>All files (*.*)</value>
   </data>
-
-  <!-- ================================================================
-       UPDATES PAGE  (Views/UpdatesPage.xaml + UpdatesViewModel.cs)
-       x:Uid keys: UpdatesPage_*
-       Code keys (GetLocalized): Updates_*
-       ================================================================ -->
   <data name="UpdatesPage_Header.Text" xml:space="preserve">
     <value>Updates</value>
   </data>
@@ -701,11 +623,9 @@
   <data name="UpdatesPage_VersionSeparator.Text" xml:space="preserve">
     <value>→</value>
   </data>
-  <!-- Cancel button tooltip in update item DataTemplate -->
   <data name="UpdatesPage_CancelBtn.ToolTipService.ToolTip" xml:space="preserve">
     <value>Cancel update</value>
   </data>
-  <!-- UpdatesViewModel — button label and progress text (code: "Updates_*".GetLocalized()) -->
   <data name="Updates_ButtonCheck" xml:space="preserve">
     <value>Check for updates</value>
   </data>
@@ -721,12 +641,6 @@
   <data name="Updates_CheckingProgress" xml:space="preserve">
     <value>Checking ({0}/{1})</value>
   </data>
-
-  <!-- ================================================================
-       SEARCH PAGE  (Views/SearchPage.xaml + SearchViewModel.cs)
-       Code keys (GetLocalized): Search_Filter_*
-       Note: Filter_Apps and Filter_Games are shared with the main page.
-       ================================================================ -->
   <data name="Search_Filter_AllDepartments" xml:space="preserve">
     <value>All departments</value>
   </data>
@@ -745,11 +659,6 @@
   <data name="Search_Filter_Paid" xml:space="preserve">
     <value>Paid</value>
   </data>
-
-  <!-- ================================================================
-       BUNDLES PAGE
-       x:Uid keys: BundlesPage_*
-       ================================================================ -->
   <data name="BundlesPage_Loading.Text" xml:space="preserve">
     <value>Loading...</value>
   </data>
@@ -759,12 +668,6 @@
   <data name="BundlesPage_InBundle.Text" xml:space="preserve">
     <value>In this bundle</value>
   </data>
-
-  <!-- ================================================================
-       APP PAGE — icon-only button tooltips
-       x:Uid keys: AppPage_StopBtn, AppPage_MoreOptionsBtn,
-                   AppPage_LightboxClose, AppPage_LightboxPrev, AppPage_LightboxNext
-       ================================================================ -->
   <data name="AppPage_StopBtn.ToolTipService.ToolTip" xml:space="preserve">
     <value>Stop</value>
   </data>
@@ -789,19 +692,9 @@
   <data name="AppPage_LightboxCounter_Format" xml:space="preserve">
     <value>{0} / {1}</value>
   </data>
-
-  <!-- ================================================================
-       DOWNLOADS PAGE — icon-only button tooltips
-       x:Uid key: DownloadsPage_MoreOptionsBtn
-       ================================================================ -->
   <data name="DownloadsPage_MoreOptionsBtn.ToolTipService.ToolTip" xml:space="preserve">
     <value>More options</value>
   </data>
-
-  <!-- ================================================================
-       APP PAGE — install button action labels
-       Code keys (GetLocalized): AppPage_Btn_*
-       ================================================================ -->
   <data name="AppPage_Btn_Install" xml:space="preserve">
     <value>Install</value>
   </data>
@@ -817,13 +710,13 @@
   <data name="AppPage_Btn_Download" xml:space="preserve">
     <value>Download</value>
   </data>
-
-  <!-- ================================================================
-       INSTALLATIONS PAGE — clear button tooltip
-       x:Uid key: InstallationsPage_ClearBtn
-       ================================================================ -->
   <data name="InstallationsPage_ClearBtn.ToolTipService.ToolTip" xml:space="preserve">
     <value>Clear</value>
   </data>
-
+  <data name="Settings_LicenseDialogTitle.Text" xml:space="preserve">
+    <value>License</value>
+  </data>
+  <data name="Settings_LicenseDialogClose.Content" xml:space="preserve">
+    <value>Close</value>
+  </data>
 </root>

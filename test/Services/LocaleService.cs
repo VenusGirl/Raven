@@ -57,6 +57,18 @@ public class LocaleService : ILocaleService
         LocaleChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    public async Task ResetToDefaultAsync()
+    {
+        Market = DetectMarketFromSystem();
+        Language = DetectLanguageFromSystem();
+
+        await _localSettingsService.SaveSettingAsync(MarketSettingsKey, Market.ToString());
+        await _localSettingsService.SaveSettingAsync(LanguageSettingsKey, Language.ToString());
+
+        ApplyLanguageOverride(Language, Market);
+        LocaleChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     /// <summary>
     /// Sets <see cref="Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride"/> to
     /// the best-matching language tag derived from the current <paramref name="lang"/> and

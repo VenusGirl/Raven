@@ -15,4 +15,6 @@ public interface ILocaleService
     Task SetMarketAsync(Market market);
 
     Task SetLanguageAsync(Lang language);
+
+    Task ResetToDefaultAsync();
 }

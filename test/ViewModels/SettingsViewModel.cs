@@ -11,6 +11,7 @@ using StoreListings.Library;
 
 using test.Contracts.Services;
 using test.Helpers;
+using test.Services;
 
 using Windows.ApplicationModel;
 
@@ -119,6 +120,19 @@ public partial class SettingsViewModel : ObservableRecipient
         {
             return lang.ToString();
         }
+    }
+
+    public async Task ResetAppToDefaultAsync()
+    {
+        DownloadManagerService.Instance.ResetAllDownloads(deleteFiles: true);
+
+        await _themeSelectorService.SetThemeAsync(ElementTheme.Default);
+        ElementTheme = _themeSelectorService.Theme;
+
+        await _localeService.ResetToDefaultAsync();
+
+        SelectedMarketIndex = Math.Max(0, _marketItems.FindIndex(x => x.Value == _localeService.Market));
+        SelectedLanguageIndex = Math.Max(0, _languageItems.FindIndex(x => x.Value == _localeService.Language));
     }
 
     private static string GetVersionDescription()
