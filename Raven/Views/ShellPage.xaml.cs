@@ -3,10 +3,10 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
-using StoreListings.Library;
 using Raven.Contracts.Services;
 using Raven.Helpers;
 using Raven.ViewModels;
+using StoreListings.Library;
 using Windows.System;
 
 namespace Raven.Views;

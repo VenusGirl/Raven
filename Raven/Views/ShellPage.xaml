@@ -58,16 +58,10 @@
         <ColumnDefinition x:Name="AccountColumn" Width="Auto" />
         <ColumnDefinition x:Name="RightPaddingColumn" Width="0" />
       </Grid.ColumnDefinitions>
-      <Image
-        Grid.Column="1"
-        Width="16"
-        Height="16"
-        Margin="8,0,4,0"
-        Source="/Assets/WindowIcon.ico"
-      />
+      <!-- <Image Grid.Column="1" Width="16" Height="16" Margin="8,0,4,0" Source="/Assets/Raven.ico" /> -->
       <TextBlock
-        x:Uid="Shell_AppTitleBarText"
         x:Name="AppTitleBarText"
+        x:Uid="Shell_AppTitleBarText"
         Grid.Column="2"
         VerticalAlignment="Center"
         Style="{StaticResource CaptionTextBlockStyle}"
