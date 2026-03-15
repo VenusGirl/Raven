@@ -1,13 +1,16 @@
 ﻿using System.Diagnostics;
+using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Raven.Contracts.Services;
 using Raven.Helpers;
 using Raven.ViewModels;
 using StoreListings.Library;
 using Windows.System;
+using Rect = Windows.Foundation.Rect;
 
 namespace Raven.Views;
 
@@ -33,8 +36,100 @@ public sealed partial class ShellPage : Page
         App.MainWindow.ExtendsContentIntoTitleBar = true;
         App.MainWindow.AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         App.MainWindow.SetTitleBar(AppTitleBar);
+        App.AppTitlebar = AppTitleBar;
         App.MainWindow.Activated += Window_Activated;
+        AppTitleBar.SizeChanged += AppTitleBar_SizeChanged;
+        AppTitleBar.Loaded += AppTitleBar_Loaded;
         Loaded += OnLoaded;
+    }
+
+    private void OnPaneDisplayModeChanged(
+        NavigationView sender,
+        NavigationViewDisplayModeChangedEventArgs args
+    )
+    {
+        AppTitleBarText.Visibility =
+            args.DisplayMode == NavigationViewDisplayMode.Minimal
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+
+        if (App.MainWindow.ExtendsContentIntoTitleBar)
+        {
+            SetRegionsForCustomTitleBar();
+        }
+    }
+
+    private void AppTitleBar_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (App.MainWindow.ExtendsContentIntoTitleBar)
+        {
+            SetRegionsForCustomTitleBar();
+        }
+    }
+
+    private void AppTitleBar_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (App.MainWindow.ExtendsContentIntoTitleBar)
+        {
+            SetRegionsForCustomTitleBar();
+        }
+    }
+
+    private void SetRegionsForCustomTitleBar()
+    {
+        if (AppTitleBar.XamlRoot is null)
+        {
+            return;
+        }
+
+        var scaleAdjustment = AppTitleBar.XamlRoot.RasterizationScale;
+
+        RightPaddingColumn.Width = new GridLength(
+            App.MainWindow.AppWindow.TitleBar.RightInset / scaleAdjustment
+        );
+        LeftPaddingColumn.Width = new GridLength(
+            App.MainWindow.AppWindow.TitleBar.LeftInset / scaleAdjustment
+        );
+
+        var transform = SearchBox.TransformToVisual(null);
+        var bounds = transform.TransformBounds(
+            new Rect(0, 0, SearchBox.ActualWidth, SearchBox.ActualHeight)
+        );
+        var searchBoxRect = GetRect(bounds, scaleAdjustment);
+
+        transform = PaneButton.TransformToVisual(null);
+        bounds = transform.TransformBounds(
+            new Rect(0, 0, PaneButton.ActualWidth, PaneButton.ActualHeight)
+        );
+        var paneButtonRect = GetRect(bounds, scaleAdjustment);
+
+        transform = BackButton.TransformToVisual(null);
+        bounds = transform.TransformBounds(
+            new Rect(0, 0, BackButton.ActualWidth, BackButton.ActualHeight)
+        );
+        var backButtonRect = GetRect(bounds, scaleAdjustment);
+
+        var rectArray = new Windows.Graphics.RectInt32[]
+        {
+            searchBoxRect,
+            paneButtonRect,
+            backButtonRect,
+        };
+
+        var nonClientInputSrc = InputNonClientPointerSource.GetForWindowId(
+            App.MainWindow.AppWindow.Id
+        );
+        nonClientInputSrc.SetRegionRects(NonClientRegionKind.Passthrough, rectArray);
+    }
+
+    private static Windows.Graphics.RectInt32 GetRect(Rect bounds, double scale)
+    {
+        return new Windows.Graphics.RectInt32(
+            _X: (int)Math.Round(bounds.X * scale),
+            _Y: (int)Math.Round(bounds.Y * scale),
+            _Width: (int)Math.Round(bounds.Width * scale),
+            _Height: (int)Math.Round(bounds.Height * scale)
+        );
     }
 
     private void OnLoaded(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
@@ -169,18 +264,16 @@ public sealed partial class ShellPage : Page
         }
     }
 
-    private void OnPaneDisplayModeChanged(
-        NavigationView sender,
-        NavigationViewDisplayModeChangedEventArgs args
-    )
+    private void PaneButton_Click(object sender, RoutedEventArgs args)
     {
-        if (args.DisplayMode == NavigationViewDisplayMode.Minimal)
+        NavigationViewControl.IsPaneOpen = !NavigationViewControl.IsPaneOpen;
+    }
+
+    private void TitleBar_BackClick(object sender, RoutedEventArgs args)
+    {
+        if (NavigationFrame.CanGoBack)
         {
-            VisualStateManager.GoToState(this, "Compact", true);
-        }
-        else
-        {
-            VisualStateManager.GoToState(this, "Default", true);
+            NavigationFrame.GoBack();
         }
     }
 
