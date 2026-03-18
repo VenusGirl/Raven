@@ -207,6 +207,9 @@
   <data name="SettingsPage_LicenseLink.Content" xml:space="preserve">
     <value>License</value>
   </data>
+  <data name="SettingsPage_ThirdPartyLicensesLink.Content" xml:space="preserve">
+    <value>Third-Party Licenses</value>
+  </data>
   <data name="CardView_Loading.Text" xml:space="preserve">
     <value>Loading</value>
   </data>
@@ -718,5 +721,11 @@ Installed version: {0}</value>
   </data>
   <data name="Settings_LicenseDialogClose.Content" xml:space="preserve">
     <value>Close</value>
+  </data>
+  <data name="Settings_ThirdPartyLicensesDialogTitle.Text" xml:space="preserve">
+    <value>Third-Party Licenses</value>
+  </data>
+  <data name="Settings_ThirdPartyLicenseStoreListingsHeader.Text" xml:space="preserve">
+    <value>StoreListings</value>
   </data>
 </root>

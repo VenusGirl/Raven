@@ -180,6 +180,10 @@
                 NavigateUri="https://github.com/mjishnu/Raven"
               />
               <HyperlinkButton x:Uid="SettingsPage_LicenseLink" Click="LicenseLink_Click" />
+              <HyperlinkButton
+                x:Uid="SettingsPage_ThirdPartyLicensesLink"
+                Click="ThirdPartyLicensesLink_Click"
+              />
             </StackPanel>
           </Grid>
         </StackPanel>
@@ -195,9 +199,10 @@
     >
       <Border
         MaxHeight="680"
+        MaxWidth="720"
         Margin="24"
         Padding="16"
-        HorizontalAlignment="Center"
+        HorizontalAlignment="Stretch"
         VerticalAlignment="Center"
         Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
@@ -240,6 +245,85 @@
             Margin="0,6,0,0"
             HorizontalAlignment="Right"
             Click="LicenseLightboxCloseButton_Click"
+          />
+        </Grid>
+      </Border>
+    </Grid>
+    <Grid
+      x:Name="ThirdPartyLicensesLightbox"
+      Grid.RowSpan="2"
+      Background="#80000000"
+      Canvas.ZIndex="10"
+      Tapped="ThirdPartyLicensesLightboxBackdrop_Tapped"
+      Visibility="Collapsed"
+    >
+      <Border
+        MaxHeight="680"
+        MaxWidth="720"
+        Margin="24"
+        Padding="16"
+        HorizontalAlignment="Stretch"
+        VerticalAlignment="Center"
+        Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+        BorderThickness="1"
+        CornerRadius="12"
+        Tapped="ThirdPartyLicensesLightboxContent_Tapped"
+      >
+        <Grid RowSpacing="12">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
+          <TextBlock
+            x:Uid="Settings_ThirdPartyLicensesDialogTitle"
+            Grid.Row="0"
+            Margin="4,0,4,0"
+            Style="{ThemeResource SubtitleTextBlockStyle}"
+          />
+          <ScrollViewer
+            Grid.Row="1"
+            Margin="0,4,0,0"
+            HorizontalScrollBarVisibility="Disabled"
+            VerticalScrollBarVisibility="Auto"
+          >
+            <Expander Margin="0,0,0,2" IsExpanded="True" HorizontalAlignment="Stretch" >
+              <Expander.Header>
+                <TextBlock x:Uid="Settings_ThirdPartyLicenseStoreListingsHeader" />
+              </Expander.Header>
+              <Border
+                Margin="0,8,0,0"
+                Padding="4"
+                Background="{ThemeResource LayerFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8"
+              >
+                <ScrollViewer
+                  MaxHeight="360"
+                  Padding="4"
+                  HorizontalScrollBarVisibility="Auto"
+                  VerticalScrollBarVisibility="Auto"
+                >
+                  <TextBlock
+                    x:Name="ThirdPartyStoreListingsLicenseTextBlock"
+                    Margin="4"
+                    FontFamily="Consolas"
+                    IsTextSelectionEnabled="False"
+                    TextWrapping="Wrap"
+                  />
+                </ScrollViewer>
+              </Border>
+            </Expander>
+          </ScrollViewer>
+          <Button
+            x:Uid="Settings_LicenseDialogClose"
+            Grid.Row="2"
+            MinWidth="100"
+            Margin="0,6,0,0"
+            HorizontalAlignment="Right"
+            Click="ThirdPartyLicensesLightboxCloseButton_Click"
           />
         </Grid>
       </Border>
