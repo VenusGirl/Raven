@@ -137,7 +137,10 @@ public sealed class DownloadHelper
         if (string.IsNullOrWhiteSpace(appFolderName))
             appFolderName = productId;
 
-        var baseDownloadDir = Path.Combine(AppContext.BaseDirectory, "downloads", appFolderName);
+        var baseDownloadDir = Path.Combine(
+            DownloadManagerService.GetDownloadsRootFolder(),
+            appFolderName
+        );
         downloadManager.UpdateDownloadPath(productId, baseDownloadDir);
 
         var depsDownloadDir = Path.Combine(baseDownloadDir, "Dependencies");

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Raven.Helpers;
@@ -45,15 +46,21 @@ public sealed partial class InstallationsPage : Page
         public int FlagsEx;
     }
 
-    private string? _selectedPath;
+    private readonly ILogger _installLogger;
     public UIUpdateService UpdateService { get; }
 
     public InstallationsPage()
+        : this(App.GetService<ILoggerFactory>())
+    {
+    }
+
+    public InstallationsPage(ILoggerFactory loggerFactory)
     {
         InitializeComponent();
         Loaded += OnLoaded;
         SizeChanged += OnSizeChanged;
         UpdateService = new UIUpdateService(this.DispatcherQueue);
+        _installLogger = loggerFactory.CreateLogger("Raven.Install");
         UpdateService.PropertyChanged += (s, e) =>
         {
             if (e.PropertyName == nameof(UIUpdateService.StatusText))
@@ -115,7 +122,6 @@ public sealed partial class InstallationsPage : Page
 
     private void SetSelectedFile(string? path)
     {
-        _selectedPath = path;
         SelectedFileText.Text = string.IsNullOrWhiteSpace(path) ? string.Empty : path;
         InstallButton.Content = "InstallationsPage_InstallLabel".GetLocalized();
         InstallButton.IsEnabled = !string.IsNullOrWhiteSpace(SelectedFileText.Text);
@@ -258,6 +264,12 @@ public sealed partial class InstallationsPage : Page
         UpdateService.StartStatusAnimation("Install_Status_Installing".GetLocalized());
         var shouldForceRetry = false;
 
+        _installLogger.LogInformation(
+            "Install start | Path={Path} | IgnoreVersion={IgnoreVersion}",
+            path,
+            ignoreVersion
+        );
+
         var progress = new Progress<AppPackageInstaller.InstallProgress>(p =>
         {
             var percent = Math.Clamp(p.Percent, 0, 100);
@@ -275,24 +287,42 @@ public sealed partial class InstallationsPage : Page
                 path,
                 dependencyPackagePaths: null,
                 progress,
-                ignoreVersion: ignoreVersion
+                ignoreVersion: ignoreVersion,
+                logger: _installLogger
             );
             UpdateService.StopStatusAnimation();
             ProgressStatusText.Text = "Install_Status_Installed".GetLocalized();
             ProgressPercentText.Text = "100%";
             succeeded = true;
+            _installLogger.LogInformation(
+                "Install success | Path={Path} | IgnoreVersion={IgnoreVersion}",
+                path,
+                ignoreVersion
+            );
         }
         catch (Exception ex) when (ex is COMException or UnauthorizedAccessException)
         {
             UpdateService.StopStatusAnimation();
             installException = ex;
             ProgressStatusText.Text = "Install_Status_Error".GetLocalized();
+            _installLogger.LogError(
+                ex,
+                "Install failed | Path={Path} | IgnoreVersion={IgnoreVersion} | Failure=PermissionOrCOM",
+                path,
+                ignoreVersion
+            );
         }
         catch (Exception ex)
         {
             UpdateService.StopStatusAnimation();
             installException = ex;
             ProgressStatusText.Text = "Install_Status_Error".GetLocalized();
+            _installLogger.LogError(
+                ex,
+                "Install failed | Path={Path} | IgnoreVersion={IgnoreVersion}",
+                path,
+                ignoreVersion
+            );
         }
         finally
         {

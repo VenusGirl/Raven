@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Windows.Management.Deployment;
 
 namespace Raven.Services;
@@ -56,7 +57,8 @@ public static class AppPackageInstaller
         IEnumerable<string>? dependencyPackagePaths = null,
         IProgress<InstallProgress>? progress = null,
         bool ignoreVersion = false,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default,
+        ILogger? logger = null
     )
     {
         if (string.IsNullOrWhiteSpace(packagePath))
@@ -80,7 +82,6 @@ public static class AppPackageInstaller
         if (ignoreVersion)
             options |= DeploymentOptions.ForceUpdateFromAnyVersion;
 
-        // Install main package first. If this fails, the install fails.
         try
         {
             await AddPackageAsync(
@@ -93,12 +94,15 @@ public static class AppPackageInstaller
         }
         catch (Exception ex)
         {
-            InstallLogService.WriteLine($"MAIN INSTALL FAILED: {packagePath}");
-            InstallLogService.WriteException("Main package install error", ex);
+            logger?.LogError(
+                ex,
+                "Main package install failed | Path={PackagePath} | IgnoreVersion={IgnoreVersion}",
+                packagePath,
+                ignoreVersion
+            );
             throw;
         }
 
-        // Best-effort install for dependencies: ignore failures, but log them.
         foreach (var dep in deps)
         {
             try
@@ -107,8 +111,12 @@ public static class AppPackageInstaller
             }
             catch (Exception ex)
             {
-                InstallLogService.WriteLine($"DEPENDENCY INSTALL FAILED (ignored): {dep}");
-                InstallLogService.WriteException("Dependency package install error", ex);
+                logger?.LogWarning(
+                    ex,
+                    "Dependency package install failed and was ignored | Path={DependencyPath} | IgnoreVersion={IgnoreVersion}",
+                    dep,
+                    ignoreVersion
+                );
             }
         }
 

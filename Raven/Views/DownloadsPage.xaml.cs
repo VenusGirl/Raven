@@ -169,7 +169,7 @@ public sealed partial class DownloadsPage : Page
 
     private void OpenFolderButton_Click(object sender, RoutedEventArgs e)
     {
-        var downloadsPath = Path.Combine(AppContext.BaseDirectory, "downloads");
+        var downloadsPath = DownloadManagerService.GetDownloadsRootFolder();
         Directory.CreateDirectory(downloadsPath);
 
         var psi = new System.Diagnostics.ProcessStartInfo

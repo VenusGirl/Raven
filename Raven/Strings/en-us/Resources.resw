@@ -210,6 +210,15 @@
   <data name="SettingsPage_ThirdPartyLicensesLink.Content" xml:space="preserve">
     <value>Third-Party Licenses</value>
   </data>
+  <data name="Settings_DiagnosticsLogs.Text" xml:space="preserve">
+    <value>Diagnostics logs</value>
+  </data>
+  <data name="Settings_DiagnosticsLogsDescription.Text" xml:space="preserve">
+    <value>Open the logs folder for troubleshooting.</value>
+  </data>
+  <data name="Settings_DiagnosticsLogsButton.Content" xml:space="preserve">
+    <value>Open logs folder</value>
+  </data>
   <data name="CardView_Loading.Text" xml:space="preserve">
     <value>Loading</value>
   </data>

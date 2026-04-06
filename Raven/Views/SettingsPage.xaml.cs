@@ -1,7 +1,10 @@
-﻿using Microsoft.UI.Xaml;
+﻿using System.Diagnostics;
+using Microsoft.Extensions.Logging;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Raven.Helpers;
+using Raven.Services;
 using Raven.ViewModels;
 
 namespace Raven.Views;
@@ -202,8 +205,8 @@ SOFTWARE.
       and charge a fee for, acceptance of support, warranty, indemnity,
       or other liability obligations and/or rights consistent with this
       License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
+      on Your own behalf and on Your sole responsibility, not on behalf of
+      any other Contributor, and only if You agree to indemnify,
       defend, and hold each Contributor harmless for any liability
       incurred by, or claims asserted against, such Contributor by reason
       of your accepting any such warranty or additional liability.
@@ -225,11 +228,19 @@ SOFTWARE.
    limitations under the License.
 """;
 
+    private readonly ILogger _runtimeLogger;
+
     public SettingsViewModel ViewModel { get; }
 
     public SettingsPage()
+        : this(App.GetService<ILoggerFactory>())
+    {
+    }
+
+    public SettingsPage(ILoggerFactory loggerFactory)
     {
         ViewModel = App.GetService<SettingsViewModel>();
+        _runtimeLogger = loggerFactory.CreateLogger("Raven.Runtime");
         InitializeComponent();
     }
 
@@ -303,6 +314,25 @@ SOFTWARE.
         if (FindName(nameof(ThirdPartyLicensesLightbox)) is Grid lightbox)
         {
             lightbox.Visibility = visibility;
+        }
+    }
+
+    private void OpenLogsFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var logsDirectory = AppLogPaths.EnsureLogDirectory();
+            Process.Start(
+                new ProcessStartInfo
+                {
+                    FileName = logsDirectory,
+                    UseShellExecute = true,
+                }
+            );
+        }
+        catch (Exception ex)
+        {
+            _runtimeLogger.LogError(ex, "Failed to open logs folder");
         }
     }
 }

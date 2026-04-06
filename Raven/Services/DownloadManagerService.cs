@@ -38,6 +38,12 @@ public class DownloadManagerService
             or DownloadStatus.Installing
             or DownloadStatus.Cancelling;
 
+    public static string GetDownloadsRootFolder() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Raven",
+        "Downloads"
+    );
+
     private void TouchDownload(string productId)
     {
         DownloadItem? item;
@@ -128,7 +134,14 @@ public class DownloadManagerService
 
     private DownloadManagerService()
     {
-        _downloadDataPath = Path.Combine(AppContext.BaseDirectory, "downloads.json");
+        var appDataDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Raven/ApplicationData"
+        );
+
+        Directory.CreateDirectory(appDataDir);
+        _downloadDataPath = Path.Combine(appDataDir, "Downloads.json");
+
         LoadDownloads();
     }
 
@@ -304,7 +317,7 @@ public class DownloadManagerService
             return;
         }
 
-        // Cancelling during the install phase should not immediately force the final state.
+        // Cancelling during the install phase should not immediately force the final status.
         // Near 100% the install may still complete; let the install operation determine
         // whether the app ended up installed (Completed) or not (Cancelled).
         if (item?.Status is DownloadStatus.Installing)
@@ -930,7 +943,7 @@ public class DownloadManagerService
     {
         try
         {
-            var baseDownloadsDir = Path.Combine(AppContext.BaseDirectory, "downloads");
+            var baseDownloadsDir = GetDownloadsRootFolder();
             if (Directory.Exists(baseDownloadsDir))
             {
                 Directory.Delete(baseDownloadsDir, recursive: true);
@@ -948,6 +961,8 @@ public class DownloadManagerService
         // This handles cases where individual file paths are missing or stale.
         try
         {
+            var baseDownloadsDir = GetDownloadsRootFolder();
+
             if (
                 !string.IsNullOrWhiteSpace(item.DownloadPath) && Directory.Exists(item.DownloadPath)
             )
@@ -956,7 +971,6 @@ public class DownloadManagerService
                 Debug.WriteLine($"Deleted app folder: {item.DownloadPath}");
 
                 // Cleanup empty downloads root if needed
-                var baseDownloadsDir = Path.Combine(AppContext.BaseDirectory, "downloads");
                 if (
                     Directory.Exists(baseDownloadsDir)
                     && !Directory.EnumerateFileSystemEntries(baseDownloadsDir).Any()
@@ -966,8 +980,6 @@ public class DownloadManagerService
                 }
                 return;
             }
-
-            var baseDownloadsDirOld = Path.Combine(AppContext.BaseDirectory, "downloads");
 
             // Find the deepest directory that still lives under the downloads root.
             string? appDir = null;
@@ -985,7 +997,7 @@ public class DownloadManagerService
                 if (
                     parent != null
                     && parent.FullName.Equals(
-                        baseDownloadsDirOld,
+                        baseDownloadsDir,
                         StringComparison.OrdinalIgnoreCase
                     )
                 )
@@ -999,7 +1011,7 @@ public class DownloadManagerService
                 if (
                     grandParent != null
                     && grandParent.FullName.Equals(
-                        baseDownloadsDirOld,
+                        baseDownloadsDir,
                         StringComparison.OrdinalIgnoreCase
                     )
                 )
@@ -1036,11 +1048,11 @@ public class DownloadManagerService
 
             // If `downloads` becomes empty, remove it as well.
             if (
-                Directory.Exists(baseDownloadsDirOld)
-                && !Directory.EnumerateFileSystemEntries(baseDownloadsDirOld).Any()
+                Directory.Exists(baseDownloadsDir)
+                && !Directory.EnumerateFileSystemEntries(baseDownloadsDir).Any()
             )
             {
-                Directory.Delete(baseDownloadsDirOld, recursive: false);
+                Directory.Delete(baseDownloadsDir, recursive: false);
             }
         }
         catch (Exception ex)

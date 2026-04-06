@@ -1,23 +1,32 @@
 ﻿using System.Diagnostics;
+using System.Reflection;
+using System.Runtime.InteropServices;
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
 
 using Raven.Activation;
 using Raven.Contracts.Services;
 using Raven.Core.Contracts.Services;
 using Raven.Core.Services;
+using Raven.Helpers;
 using Raven.Models;
 using Raven.Services;
 using Raven.ViewModels;
 using Raven.Views;
+using Serilog;
+using Serilog.Events;
+using Serilog.Filters;
 
 namespace Raven;
 
 public partial class App : Application
 {
     public IHost Host { get; }
+
+    private readonly ILogger<App> _logger;
 
     public static IServiceProvider Services { get; private set; }
 
@@ -42,9 +51,25 @@ public partial class App : Application
     {
         InitializeComponent();
 
-        Host = Microsoft
-            .Extensions.Hosting.Host.CreateDefaultBuilder()
-            .UseContentRoot(AppContext.BaseDirectory)
+        Host = BuildHost();
+
+        Services = Host.Services;
+        _logger = Host.Services.GetRequiredService<ILogger<App>>();
+
+        UnhandledException += App_UnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+        TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
+    }
+
+    private static IHost BuildHost()
+    {
+        var builder = Microsoft.Extensions.Hosting.Host.CreateDefaultBuilder().UseContentRoot(
+            AppContext.BaseDirectory
+        );
+
+        builder.UseSerilog((_, _, loggerConfiguration) => ConfigureLogging(loggerConfiguration));
+
+        return builder
             .ConfigureServices(
                 (context, services) =>
                 {
@@ -104,8 +129,57 @@ public partial class App : Application
                 }
             )
             .Build();
+    }
 
-        UnhandledException += App_UnhandledException;
+    private static void ConfigureLogging(LoggerConfiguration loggerConfiguration)
+    {
+        const string outputTemplate =
+            "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3}] {SourceContext} {Message:lj}{NewLine}{Exception}";
+
+        loggerConfiguration
+            .MinimumLevel.Information()
+            .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+            .Enrich.FromLogContext();
+
+        try
+        {
+            AppLogPaths.EnsureLogDirectory();
+
+            loggerConfiguration
+                .WriteTo.File(
+                    AppLogPaths.RuntimeLogFilePath,
+                    rollingInterval: RollingInterval.Day,
+                    retainedFileCountLimit: 14,
+                    shared: true,
+                    outputTemplate: outputTemplate
+                )
+                .WriteTo.Logger(lc =>
+                    lc.Filter
+                        .ByIncludingOnly(Matching.FromSource("Raven.Install"))
+                        .WriteTo.File(
+                            AppLogPaths.InstallLogFilePath,
+                            rollingInterval: RollingInterval.Day,
+                            retainedFileCountLimit: 14,
+                            shared: true,
+                            outputTemplate: outputTemplate
+                        )
+                )
+                .WriteTo.Logger(lc =>
+                    lc.Filter
+                        .ByIncludingOnly(e => e.Level >= LogEventLevel.Error)
+                        .WriteTo.File(
+                            AppLogPaths.CrashLogFilePath,
+                            rollingInterval: RollingInterval.Day,
+                            retainedFileCountLimit: 30,
+                            shared: true,
+                            outputTemplate: outputTemplate
+                        )
+                );
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[App] File logging unavailable: {ex}");
+        }
     }
 
     private void App_UnhandledException(
@@ -113,15 +187,33 @@ public partial class App : Application
         Microsoft.UI.Xaml.UnhandledExceptionEventArgs e
     )
     {
+        _logger.LogError(e.Exception, "Unhandled UI exception");
+
         Debug.WriteLine($"[App] UNHANDLED EXCEPTION: {e.Exception?.GetType().FullName}");
         Debug.WriteLine($"[App] Message   : {e.Exception?.Message}");
         Debug.WriteLine($"[App] Inner     : {e.Exception?.InnerException?.Message}");
         Debug.WriteLine($"[App] StackTrace:\n{e.Exception?.StackTrace}");
     }
 
+    private void CurrentDomain_UnhandledException(object? sender, System.UnhandledExceptionEventArgs e)
+    {
+        _logger.LogCritical(e.ExceptionObject as Exception, "Unhandled domain exception");
+    }
+
+    private void TaskScheduler_UnobservedTaskException(
+        object? sender,
+        UnobservedTaskExceptionEventArgs e
+    )
+    {
+        _logger.LogError(e.Exception, "Unobserved task exception");
+        e.SetObserved();
+    }
+
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
         base.OnLaunched(args);
+
+        LogStartupDetails();
 
         // Initialize DownloadManagerService with the dispatcher queue
         DownloadManagerService.Instance.Initialize(
@@ -129,5 +221,28 @@ public partial class App : Application
         );
 
         await App.GetService<IActivationService>().ActivateAsync(args);
+    }
+
+    private void LogStartupDetails()
+    {
+        try
+        {
+            var assemblyVersion = Assembly.GetExecutingAssembly().GetName().Version;
+            var osVersion = SystemInfo.GetExactWindowsVersion();
+
+            _logger.LogInformation(
+                "Startup | AppVersion={AppVersion} | Runtime={Runtime} | OS={OSVersion} | Arch={Architecture} | BaseDir={BaseDir} | LogsDir={LogsDir}",
+                assemblyVersion?.ToString() ?? "unknown",
+                RuntimeInformation.FrameworkDescription,
+                osVersion,
+                RuntimeInformation.OSArchitecture,
+                AppContext.BaseDirectory,
+                AppLogPaths.LogDirectory
+            );
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[App] Failed to write startup details: {ex}");
+        }
     }
 }

@@ -1,5 +1,4 @@
 ﻿using System.ComponentModel;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using StoreListings.Library;
 
@@ -95,10 +94,7 @@ public partial class AppInfo : INotifyPropertyChanged
     private string? _quickLogoUrl;
 
     /// <summary>Returns the logo URL from the loaded product, falling back to a pre-fill URL set during navigation.</summary>
-    public string? LogoUrl =>
-        !string.IsNullOrEmpty(_logo?.Url) ? _logo!.Url :
-        !string.IsNullOrEmpty(_quickLogoUrl) ? _quickLogoUrl :
-        null;
+    public string? LogoUrl => _logo?.Url ?? _quickLogoUrl;
 
     public void SetQuickLogo(string? url)
     {
@@ -126,22 +122,15 @@ public partial class AppInfo : INotifyPropertyChanged
     {
         get
         {
-            if (!string.IsNullOrEmpty(_lastUpdated))
+            if (!string.IsNullOrWhiteSpace(_lastUpdated) && DateTime.TryParse(_lastUpdated, out var parsed))
             {
-                try
-                {
-                    return DateTime.Parse(_lastUpdated).ToString("MMMM dd, yyyy");
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine(ex.Message);
-                }
+                return parsed.ToString("MMMM dd, yyyy");
             }
+
             return "N/A";
         }
         set
         {
-
             if (_lastUpdated != value)
             {
                 _lastUpdated = value;
@@ -236,7 +225,7 @@ public partial class AppInfo : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    protected void OnPropertyChanged([CallerMemberName] string propertyName = "") =>
+    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
     private static string? FormatRatingCount(long? val)
