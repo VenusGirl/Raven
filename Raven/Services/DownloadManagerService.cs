@@ -352,12 +352,6 @@ public class DownloadManagerService
             return;
         }
 
-        if (item?.Status is DownloadStatus.Completed)
-        {
-            // Not an active operation; keep it as completed.
-            return;
-        }
-
         // Always remember the request so phases that haven't registered CTS yet
         // (URL fetch, install) still get cancelled.
         _cancellationRequested[productId] = true;
@@ -575,12 +569,7 @@ public class DownloadManagerService
                         DownloadedProductIds.Add(productId);
                     }
                 }
-                else if (
-                    status
-                    is DownloadStatus.Cancelled
-                        or DownloadStatus.Failed
-                        or DownloadStatus.Completed
-                )
+                else if (status is DownloadStatus.Cancelled or DownloadStatus.Failed)
                 {
                     item.StatusTextOverride = null;
                 }
@@ -798,7 +787,6 @@ public class DownloadManagerService
     private void SaveDownloads() => SaveDownloadsThrottled(force: true);
 
     private readonly object _saveGate = new();
-    private DateTimeOffset _lastSave = DateTimeOffset.MinValue;
     private Task _saveTask = Task.CompletedTask;
     private System.Threading.Timer? _debounceTimer;
     private volatile bool _savePending;

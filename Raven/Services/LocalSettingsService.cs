@@ -3,11 +3,7 @@
 using Raven.Contracts.Services;
 using Raven.Core.Contracts.Services;
 using Raven.Core.Helpers;
-using Raven.Helpers;
 using Raven.Models;
-
-using Windows.ApplicationModel;
-using Windows.Storage;
 
 namespace Raven.Services;
 
@@ -50,21 +46,11 @@ public class LocalSettingsService : ILocalSettingsService
 
     public async Task<T?> ReadSettingAsync<T>(string key)
     {
-        if (RuntimeHelper.IsMSIX)
-        {
-            if (ApplicationData.Current.LocalSettings.Values.TryGetValue(key, out var obj))
-            {
-                return await Json.ToObjectAsync<T>((string)obj);
-            }
-        }
-        else
-        {
-            await InitializeAsync();
+        await InitializeAsync();
 
-            if (_settings != null && _settings.TryGetValue(key, out var obj))
-            {
-                return await Json.ToObjectAsync<T>((string)obj);
-            }
+        if (_settings != null && _settings.TryGetValue(key, out var obj))
+        {
+            return await Json.ToObjectAsync<T>((string)obj);
         }
 
         return default;
@@ -72,17 +58,10 @@ public class LocalSettingsService : ILocalSettingsService
 
     public async Task SaveSettingAsync<T>(string key, T value)
     {
-        if (RuntimeHelper.IsMSIX)
-        {
-            ApplicationData.Current.LocalSettings.Values[key] = await Json.StringifyAsync(value);
-        }
-        else
-        {
-            await InitializeAsync();
+        await InitializeAsync();
 
-            _settings[key] = await Json.StringifyAsync(value);
+        _settings[key] = await Json.StringifyAsync(value);
 
-            await Task.Run(() => _fileService.Save(_applicationDataFolder, _localsettingsFile, _settings));
-        }
+        await Task.Run(() => _fileService.Save(_applicationDataFolder, _localsettingsFile, _settings));
     }
 }

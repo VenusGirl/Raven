@@ -4,7 +4,6 @@ using Downloader;
 using StoreListings.Library;
 using Raven.Models;
 using Raven.Services;
-using Windows.Management.Deployment;
 
 namespace Raven.Helpers;
 
@@ -98,8 +97,6 @@ public sealed class DownloadHelper
             ParallelDownload = false,
             ChunkCount = 1,
             ParallelCount = 1,
-
-            Timeout = 30000,
 
             // Smaller buffer reduces memory footprint per download.
             // 64KB is a good balance between throughput and memory usage.
@@ -440,7 +437,6 @@ public sealed class DownloadHelper
                             ParallelDownload = false,
                             ChunkCount = 1,
                             ParallelCount = 1,
-                            Timeout = config.Timeout,
                             BufferBlockSize = config.BufferBlockSize,
                             MaximumBytesPerSecond = config.MaximumBytesPerSecond,
                             EnableLiveStreaming = true,
@@ -754,18 +750,7 @@ public sealed class DownloadHelper
 
     private static bool IsPackageInstalled(string? packageFamilyName)
     {
-        if (string.IsNullOrWhiteSpace(packageFamilyName))
-            return false;
-
-        try
-        {
-            var packageManager = new PackageManager();
-            return packageManager.FindPackagesForUser(string.Empty, packageFamilyName).Any();
-        }
-        catch
-        {
-            return false;
-        }
+        return PackagedAppDiscovery.IsInstalled(packageFamilyName);
     }
 
     private static int GetRetryDelayMs(WebException? webEx, int attempt, int maxBackoffMs)

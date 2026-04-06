@@ -3,7 +3,6 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using StoreListings.Library;
 using Raven.Contracts.Services;
-using Raven.Helpers;
 using Raven.Models;
 using Raven.Services;
 using Raven.ViewModels;

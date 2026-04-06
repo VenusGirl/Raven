@@ -86,67 +86,30 @@ public static class GetDownloadUrl
         {
             case InstallerType.Packaged:
             {
-                var packageResult = await DCATPackage.GetPackagesAsync(
+                var selectionContext = await VersionCheckService.GetPackagedSelectionContextAsync(
                     productId,
+                    cancellationToken,
+                    prefetchedPackages: null,
+                    deviceFamily,
                     market,
                     language,
-                    true
-                );
-                if (!packageResult.IsSuccess)
-                    return null;
-
-                if (
-                    !packageResult.Value.Any(p =>
-                        p.PlatformDependencies.Any(pd => pd.MinVersion <= OSVersion)
-                    )
-                )
-                    return null;
-
-                var cookieResult = await FE3Handler.GetCookieAsync(cancellationToken);
-                if (!cookieResult.IsSuccess)
-                    return null;
-
-                var osArch = archRid switch
-                {
-                    "arm64" => FE3OSArch.ARM64,
-                    "x86" => FE3OSArch.X86,
-                    "arm" => FE3OSArch.ARM,
-                    _ => FE3OSArch.AMD64,
-                };
-
-                var fe3sync = await FE3Handler.SyncUpdatesAsync(
-                    cookieResult.Value,
-                    packageResult.Value.First().WuCategoryId,
-                    language,
-                    market,
-                    currentBranch,
                     flightRing,
                     flightingBranchName,
+                    currentBranch,
                     OSVersion,
-                    deviceFamily,
-                    cancellationToken,
-                    osArch
+                    archRid
                 );
 
-                if (!fe3sync.IsSuccess)
+                if (selectionContext is null)
                     return null;
 
-                var updates = fe3sync.Value.Updates.ToList();
-                var priorities = Utils.GetArchPriorities(archRid, isPackaged: true);
-                var candidates = updates
-                    .Where(t =>
-                        !t.IsFramework
-                        && t.TargetPlatforms.Any(p =>
-                            (p.Family == deviceFamily || p.Family == DeviceFamily.Universal)
-                            && p.MinVersion <= OSVersion
-                        )
-                    )
-                    .OrderByDescending(t => t.Version)
-                    .ToList();
+                var packageList = selectionContext.Packages;
+                var updates = selectionContext.Updates;
+                var priorities = Utils.GetArchPriorities(selectionContext.ArchRid, isPackaged: true);
 
                 foreach (var archPref in priorities)
                 {
-                    var archCandidates = candidates.Where(c =>
+                    var archCandidates = selectionContext.Candidates.Where(c =>
                         Utils.ParseArchString(c.FileName ?? c.PackageIdentityName, isPackaged: true)
                         == archPref
                     );
@@ -154,7 +117,7 @@ public static class GetDownloadUrl
                     foreach (var main in archCandidates)
                     {
                         // --- 1. SELECTION ---
-                        var dcatMain = packageResult.Value.FirstOrDefault(p =>
+                        var dcatMain = packageList.FirstOrDefault(p =>
                             p.PackageIdentityName.Equals(
                                 main.PackageIdentityName,
                                 StringComparison.OrdinalIgnoreCase
@@ -180,7 +143,7 @@ public static class GetDownloadUrl
                                         )
                                         && d.Version >= dep.MinVersion
                                         && d.TargetPlatforms.Any(tp =>
-                                            tp.MinVersion <= OSVersion
+                                            tp.MinVersion <= selectionContext.OsVersion
                                             && (
                                                 tp.Family == DeviceFamily.Universal
                                                 || tp.Family == deviceFamily
@@ -211,7 +174,7 @@ public static class GetDownloadUrl
                                         latestGroup
                                             .Select(u => (Update: u, Url: string.Empty))
                                             .ToList(),
-                                        archRid
+                                        selectionContext.ArchRid
                                     );
 
                                     requiredDepUpdates.AddRange(reduced.Select(r => r.Update));
@@ -224,7 +187,7 @@ public static class GetDownloadUrl
 
                         // --- 2. FETCH URLs ---
                         var mainDownloadInfo = await FE3Handler.GetPackageDownloadInfo(
-                            fe3sync.Value.NewCookie,
+                            selectionContext.NewCookie,
                             main.UpdateID,
                             main.RevisionNumber,
                             main.Digest,
@@ -233,10 +196,10 @@ public static class GetDownloadUrl
                             currentBranch,
                             flightRing,
                             flightingBranchName,
-                            OSVersion,
+                            selectionContext.OsVersion,
                             deviceFamily,
                             cancellationToken,
-                            osArch
+                            selectionContext.OsArch
                         );
 
                         if (!mainDownloadInfo.IsSuccess)
@@ -248,7 +211,7 @@ public static class GetDownloadUrl
                         foreach (var depUpdate in requiredDepUpdates.Distinct())
                         {
                             var depDownloadInfo = await FE3Handler.GetPackageDownloadInfo(
-                                fe3sync.Value.NewCookie,
+                                selectionContext.NewCookie,
                                 depUpdate.UpdateID,
                                 depUpdate.RevisionNumber,
                                 depUpdate.Digest,
@@ -257,10 +220,10 @@ public static class GetDownloadUrl
                                 currentBranch,
                                 flightRing,
                                 flightingBranchName,
-                                OSVersion,
+                                selectionContext.OsVersion,
                                 deviceFamily,
                                 cancellationToken,
-                                osArch
+                                selectionContext.OsArch
                             );
 
                             if (!depDownloadInfo.IsSuccess)
@@ -315,51 +278,23 @@ public static class GetDownloadUrl
             }
             case InstallerType.Unpackaged:
             {
-                var unpackagedResult = await StoreEdgeFDProduct.GetUnpackagedInstall(
+                var selectionContext = await VersionCheckService.GetUnpackagedSelectionContextAsync(
                     productId,
+                    cancellationToken,
                     market,
                     language,
-                    cancellationToken
+                    archRid
                 );
 
-                if (
-                    !unpackagedResult.IsSuccess
-                    || unpackagedResult.Value == null
-                    || !unpackagedResult.Value.Any()
-                )
+                if (selectionContext is null)
                     return null;
 
-                var items = unpackagedResult.Value;
-                var priorities = Utils.GetArchPriorities(archRid, isPackaged: false);
-
-                foreach (var prefArch in priorities)
-                {
-                    var matchingCandidates = items
-                        .Where(i =>
-                            Utils.ParseArchString(i.architecture, isPackaged: false) == prefArch
-                        )
-                        .ToList();
-
-                    if (matchingCandidates.Any())
-                    {
-                        var bestCandidate = matchingCandidates
-                            .OrderByDescending(c =>
-                                System.Version.TryParse(c.Version, out var v)
-                                    ? v
-                                    : new System.Version(0, 0)
-                            )
-                            .First();
-
-                        return new FileEntry(
-                            FileName: bestCandidate.FileName,
-                            Url: bestCandidate.InstallerUrl,
-                            Dependencies: Array.Empty<FileEntry>(),
-                            Sha256: bestCandidate.InstallerSha256
-                        );
-                    }
-                }
-
-                return null;
+                return new FileEntry(
+                    FileName: selectionContext.FileName,
+                    Url: selectionContext.InstallerUrl,
+                    Dependencies: Array.Empty<FileEntry>(),
+                    Sha256: selectionContext.InstallerSha256
+                );
             }
 
             default:

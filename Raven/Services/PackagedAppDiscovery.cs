@@ -5,8 +5,6 @@ namespace Raven.Services;
 
 public static class PackagedAppDiscovery
 {
-    public sealed record InstalledAppInfo(bool IsInstalled);
-
     public enum LaunchFailureReason
     {
         None = 0,
@@ -21,19 +19,9 @@ public static class PackagedAppDiscovery
         if (string.IsNullOrWhiteSpace(packageFamilyName))
             return null;
 
-        try
-        {
-            var pm = new PackageManager();
-            var pkg = pm.FindPackagesForUser(string.Empty, packageFamilyName).FirstOrDefault();
-            var v = pkg?.Id?.Version;
-            return v == null
-                ? null
-                : $"{v.Value.Major}.{v.Value.Minor}.{v.Value.Build}.{v.Value.Revision}";
-        }
-        catch
-        {
-            return null;
-        }
+        var pkg = FindPackageByFamilyName(packageFamilyName);
+        var v = pkg?.Id?.Version;
+        return v == null ? null : FormatVersion(v.Value);
     }
 
     public sealed record PackagedLaunchResult(
@@ -44,25 +32,10 @@ public static class PackagedAppDiscovery
 
     public static bool IsInstalled(string? packageFamilyName)
     {
-        var info = GetInstalledInfo(packageFamilyName);
-        return info.IsInstalled;
-    }
-
-    public static InstalledAppInfo GetInstalledInfo(string? packageFamilyName)
-    {
         if (string.IsNullOrWhiteSpace(packageFamilyName))
-            return new InstalledAppInfo(false);
+            return false;
 
-        try
-        {
-            var pm = new PackageManager();
-            var pkg = pm.FindPackagesForUser(string.Empty, packageFamilyName).FirstOrDefault();
-            return new InstalledAppInfo(pkg != null);
-        }
-        catch
-        {
-            return new InstalledAppInfo(false);
-        }
+        return FindPackageByFamilyName(packageFamilyName) != null;
     }
 
     public static List<(string PackageFamilyName, string InstalledVersion, string DisplayName)>
@@ -93,9 +66,7 @@ public static class PackagedAppDiscovery
                 if (string.IsNullOrWhiteSpace(pfn)) continue;
 
                 var v = pkg.Id?.Version;
-                var versionStr = v == null
-                    ? "0.0.0.0"
-                    : $"{v.Value.Major}.{v.Value.Minor}.{v.Value.Build}.{v.Value.Revision}";
+                var versionStr = v == null ? "0.0.0.0" : FormatVersion(v.Value);
 
                 string displayName;
                 try { displayName = pkg.DisplayName; }
@@ -115,12 +86,6 @@ public static class PackagedAppDiscovery
             .ToList();
     }
 
-    public static async Task<bool> TryLaunchAsync(string? packageFamilyName)
-    {
-        var result = await TryLaunchDetailedAsync(packageFamilyName);
-        return result.Success;
-    }
-
     public static async Task<PackagedLaunchResult> TryLaunchDetailedAsync(string? packageFamilyName)
     {
         if (string.IsNullOrWhiteSpace(packageFamilyName))
@@ -134,8 +99,7 @@ public static class PackagedAppDiscovery
 
         try
         {
-            var pm = new PackageManager();
-            var pkg = pm.FindPackagesForUser(string.Empty, packageFamilyName).FirstOrDefault();
+            var pkg = FindPackageByFamilyName(packageFamilyName);
             if (pkg == null)
             {
                 return new PackagedLaunchResult(
@@ -173,4 +137,20 @@ public static class PackagedAppDiscovery
             );
         }
     }
+
+    private static Windows.ApplicationModel.Package? FindPackageByFamilyName(string packageFamilyName)
+    {
+        try
+        {
+            var pm = new PackageManager();
+            return pm.FindPackagesForUser(string.Empty, packageFamilyName).FirstOrDefault();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string FormatVersion(Windows.ApplicationModel.PackageVersion version) =>
+        $"{version.Major}.{version.Minor}.{version.Build}.{version.Revision}";
 }

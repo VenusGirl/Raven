@@ -9,6 +9,169 @@ namespace Raven.Helpers;
 /// </summary>
 public static class VersionCheckService
 {
+    internal sealed record PackagedSelectionContext(
+        IReadOnlyList<DCATPackage> Packages,
+        IReadOnlyList<FE3Handler.SyncUpdatesResponse.Update> Updates,
+        IReadOnlyList<FE3Handler.SyncUpdatesResponse.Update> Candidates,
+        FE3Handler.Cookie NewCookie,
+        FE3OSArch OsArch,
+        StoreListings.Library.Version OsVersion,
+        string ArchRid
+    );
+
+    internal sealed record UnpackagedSelectionContext(
+        string InstallerUrl,
+        string FileName,
+        string Version,
+        string InstallerSha256,
+        string Architecture
+    );
+
+    private static FE3OSArch GetOsArch(string archRid) =>
+        archRid switch
+        {
+            "arm64" => FE3OSArch.ARM64,
+            "x86" => FE3OSArch.X86,
+            "arm" => FE3OSArch.ARM,
+            _ => FE3OSArch.AMD64,
+        };
+
+    internal static async Task<PackagedSelectionContext?> GetPackagedSelectionContextAsync(
+        string productId,
+        CancellationToken cancellationToken = default,
+        IEnumerable<DCATPackage>? prefetchedPackages = null,
+        DeviceFamily deviceFamily = DeviceFamily.Desktop,
+        Market market = Market.US,
+        Lang language = Lang.en,
+        string flightRing = "Retail",
+        string flightingBranchName = "Retail",
+        string currentBranch = "ge_release",
+        StoreListings.Library.Version? osVersion = null,
+        string? archRid = null
+    )
+    {
+        var resolvedOsVersion = osVersion ?? SystemInfo.GetExactWindowsVersion();
+        var resolvedArchRid = archRid ?? SystemInfo.GetOsArchRid();
+
+        IReadOnlyList<DCATPackage> packages;
+        if (prefetchedPackages != null)
+        {
+            packages = prefetchedPackages.ToList();
+        }
+        else
+        {
+            var packageResult = await DCATPackage.GetPackagesAsync(
+                productId,
+                market,
+                language,
+                true,
+                cancellationToken
+            );
+
+            if (!packageResult.IsSuccess)
+                return null;
+
+            packages = packageResult.Value.ToList();
+        }
+
+        if (!packages.Any(p => p.PlatformDependencies.Any(pd => pd.MinVersion <= resolvedOsVersion)))
+            return null;
+
+        var cookieResult = await FE3Handler.GetCookieAsync(cancellationToken);
+        if (!cookieResult.IsSuccess)
+            return null;
+
+        var osArch = GetOsArch(resolvedArchRid);
+
+        var fe3sync = await FE3Handler.SyncUpdatesAsync(
+            cookieResult.Value,
+            packages.First().WuCategoryId,
+            language,
+            market,
+            currentBranch,
+            flightRing,
+            flightingBranchName,
+            resolvedOsVersion,
+            deviceFamily,
+            cancellationToken,
+            osArch
+        );
+
+        if (!fe3sync.IsSuccess)
+            return null;
+
+        var updates = fe3sync.Value.Updates.ToList();
+        var candidates = updates
+            .Where(t =>
+                !t.IsFramework
+                && t.TargetPlatforms.Any(p =>
+                    (p.Family == deviceFamily || p.Family == DeviceFamily.Universal)
+                    && p.MinVersion <= resolvedOsVersion
+                )
+            )
+            .OrderByDescending(t => t.Version)
+            .ToList();
+
+        return new PackagedSelectionContext(
+            packages,
+            updates,
+            candidates,
+            fe3sync.Value.NewCookie,
+            osArch,
+            resolvedOsVersion,
+            resolvedArchRid
+        );
+    }
+
+    internal static async Task<UnpackagedSelectionContext?> GetUnpackagedSelectionContextAsync(
+        string productId,
+        CancellationToken cancellationToken = default,
+        Market market = Market.US,
+        Lang language = Lang.en,
+        string? archRid = null
+    )
+    {
+        var resolvedArchRid = archRid ?? SystemInfo.GetOsArchRid();
+
+        var unpackagedResult = await StoreEdgeFDProduct.GetUnpackagedInstall(
+            productId,
+            market,
+            language,
+            cancellationToken
+        );
+
+        if (!unpackagedResult.IsSuccess || unpackagedResult.Value == null || !unpackagedResult.Value.Any())
+            return null;
+
+        var priorities = Utils.GetArchPriorities(resolvedArchRid, isPackaged: false);
+
+        foreach (var prefArch in priorities)
+        {
+            var matchingCandidates = unpackagedResult.Value
+                .Where(i => Utils.ParseArchString(i.architecture, isPackaged: false) == prefArch)
+                .ToList();
+
+            if (matchingCandidates.Any())
+            {
+                var bestCandidate = matchingCandidates
+                    .OrderByDescending(c =>
+                        System.Version.TryParse(c.Version, out var v) ? v : new System.Version(0, 0)
+                    )
+                    .First();
+
+                return new UnpackagedSelectionContext(
+                    bestCandidate.InstallerUrl,
+                    bestCandidate.FileName,
+                    bestCandidate.Version,
+                    bestCandidate.InstallerSha256,
+                    bestCandidate.architecture
+                );
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>
     /// Returns the latest available version string for the given product,
     /// or <c>null</c> if the version could not be determined.
@@ -33,131 +196,50 @@ public static class VersionCheckService
         {
             case InstallerType.Packaged:
             {
-                IEnumerable<DCATPackage> packages;
-                if (prefetchedPackages != null)
-                {
-                    packages = prefetchedPackages;
-                }
-                else
-                {
-                    var packageResult = await DCATPackage.GetPackagesAsync(
-                        productId,
-                        market,
-                        language,
-                        true,
-                        cancellationToken
-                    );
-
-                    if (!packageResult.IsSuccess)
-                        return null;
-
-                    packages = packageResult.Value;
-                }
-
-                if (
-                    !packages.Any(p =>
-                        p.PlatformDependencies.Any(pd => pd.MinVersion <= osVersion)
-                    )
-                )
-                    return null;
-
-            var cookieResult = await FE3Handler.GetCookieAsync(cancellationToken);
-                if (!cookieResult.IsSuccess)
-                    return null;
-
-                var osArch = archRid switch
-                {
-                    "arm64" => FE3OSArch.ARM64,
-                    "x86" => FE3OSArch.X86,
-                    "arm" => FE3OSArch.ARM,
-                    _ => FE3OSArch.AMD64,
-                };
-
-                var fe3sync = await FE3Handler.SyncUpdatesAsync(
-                    cookieResult.Value,
-                    packages.First().WuCategoryId,
-                    language,
+                var selectionContext = await GetPackagedSelectionContextAsync(
+                    productId,
+                    cancellationToken,
+                    prefetchedPackages,
+                    deviceFamily,
                     market,
-                    currentBranch,
+                    language,
                     flightRing,
                     flightingBranchName,
+                    currentBranch,
                     osVersion,
-                    deviceFamily,
-                    cancellationToken,
-                    osArch
+                    archRid
                 );
 
-                if (!fe3sync.IsSuccess)
+                if (selectionContext is null)
                     return null;
 
-                var priorities = Utils.GetArchPriorities(archRid, isPackaged: true);
-                var candidates = fe3sync.Value.Updates
-                    .Where(t =>
-                        !t.IsFramework
-                        && t.TargetPlatforms.Any(p =>
-                            (p.Family == deviceFamily || p.Family == DeviceFamily.Universal)
-                            && p.MinVersion <= osVersion
-                        )
-                    )
-                    .OrderByDescending(t => t.Version)
-                    .ToList();
+                var priorities = Utils.GetArchPriorities(selectionContext.ArchRid, isPackaged: true);
 
                 foreach (var archPref in priorities)
                 {
-                    var match = candidates.FirstOrDefault(c =>
-                        Utils.ParseArchString(
-                            c.FileName ?? c.PackageIdentityName,
-                            isPackaged: true
-                        ) == archPref
+                    var match = selectionContext.Candidates.FirstOrDefault(c =>
+                        Utils.ParseArchString(c.FileName ?? c.PackageIdentityName, isPackaged: true)
+                        == archPref
                     );
 
                     if (match != null)
                         return match.Version.ToString();
                 }
 
-                return candidates.FirstOrDefault()?.Version.ToString();
+                return selectionContext.Candidates.FirstOrDefault()?.Version.ToString();
             }
 
             case InstallerType.Unpackaged:
             {
-                var unpackagedResult = await StoreEdgeFDProduct.GetUnpackagedInstall(
+                var selectionContext = await GetUnpackagedSelectionContextAsync(
                     productId,
+                    cancellationToken,
                     market,
                     language,
-                    cancellationToken
+                    archRid
                 );
 
-                if (
-                    !unpackagedResult.IsSuccess
-                    || unpackagedResult.Value == null
-                    || !unpackagedResult.Value.Any()
-                )
-                    return null;
-
-                var priorities = Utils.GetArchPriorities(archRid, isPackaged: false);
-
-                foreach (var prefArch in priorities)
-                {
-                    var matchingCandidates = unpackagedResult.Value
-                        .Where(i =>
-                            Utils.ParseArchString(i.architecture, isPackaged: false) == prefArch
-                        )
-                        .ToList();
-
-                    if (matchingCandidates.Any())
-                    {
-                        return matchingCandidates
-                            .OrderByDescending(c =>
-                                System.Version.TryParse(c.Version, out var v)
-                                    ? v
-                                    : new System.Version(0, 0)
-                            )
-                            .First()
-                            .Version;
-                    }
-                }
-
-                return null;
+                return selectionContext?.Version;
             }
 
             default:

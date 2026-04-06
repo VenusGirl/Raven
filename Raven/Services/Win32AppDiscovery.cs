@@ -32,12 +32,6 @@ public static class Win32AppDiscovery
             : new InstalledAppInfo(false, null);
     }
 
-    public static async Task<bool> TryLaunchAsync(string? appName)
-    {
-        var result = await TryLaunchDetailedAsync(appName);
-        return result.Success;
-    }
-
     public static async Task<Win32LaunchResult> TryLaunchDetailedAsync(string? appName)
     {
         if (string.IsNullOrWhiteSpace(appName))

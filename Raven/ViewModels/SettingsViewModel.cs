@@ -8,7 +8,6 @@ using Raven.Contracts.Services;
 using Raven.Helpers;
 using Raven.Services;
 using StoreListings.Library;
-using Windows.ApplicationModel;
 
 namespace Raven.ViewModels;
 
