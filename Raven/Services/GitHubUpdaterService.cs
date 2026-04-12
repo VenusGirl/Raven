@@ -8,15 +8,12 @@ namespace Raven.Services;
 
 public sealed class GitHubUpdaterService
 {
-    private const string Owner = "mjishnu";
-    private const string Repository = "raven";
-
     private static readonly HttpClient HttpClient = CreateHttpClient();
 
     public async Task<GitHubReleaseInfo> GetLatestReleaseAsync(CancellationToken cancellationToken = default)
     {
         using var response = await HttpClient.GetAsync(
-            $"https://api.github.com/repos/{Owner}/{Repository}/releases/latest",
+            $"https://api.github.com/repos/mjishnu/raven/releases/latest",
             cancellationToken
         );
 

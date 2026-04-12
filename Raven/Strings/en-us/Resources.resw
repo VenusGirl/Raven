@@ -238,10 +238,10 @@
     <value>Install</value>
   </data>
   <data name="Settings_UpdaterAlreadyLatestTitle" xml:space="preserve">
-    <value>All set</value>
+    <value>You're up to date</value>
   </data>
   <data name="Settings_UpdaterAlreadyLatestContent" xml:space="preserve">
-    <value>You have the latest version.</value>
+    <value>latest version already installed.</value>
   </data>
   <data name="Settings_UpdaterErrorTitle" xml:space="preserve">
     <value>Something went wrong</value>
