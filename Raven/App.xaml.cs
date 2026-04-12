@@ -28,10 +28,17 @@ public partial class App : Application
 
     public static IServiceProvider Services { get; private set; }
 
+    public static WindowEx MainWindow { get; private set; } = null!;
+
     public static T GetService<T>()
         where T : class
     {
-        if ((App.Current as App)!.Host.Services.GetService(typeof(T)) is not T service)
+        if (Services is null)
+        {
+            throw new InvalidOperationException("The application services have not been initialized yet.");
+        }
+
+        if (Services.GetService(typeof(T)) is not T service)
         {
             throw new ArgumentException(
                 $"{typeof(T)} needs to be registered in ConfigureServices within App.xaml.cs."
@@ -41,8 +48,6 @@ public partial class App : Application
         return service;
     }
 
-    public static WindowEx MainWindow { get; } = new MainWindow();
-
     public static UIElement? AppTitlebar { get; set; }
 
     public App()
@@ -50,7 +55,6 @@ public partial class App : Application
         InitializeComponent();
 
         Host = BuildHost();
-
         Services = Host.Services;
         _logger = Host.Services.GetRequiredService<ILogger<App>>();
 
@@ -222,6 +226,8 @@ public partial class App : Application
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
         base.OnLaunched(args);
+
+        MainWindow = new MainWindow();
 
         LogStartupDetails();
 

@@ -24,16 +24,17 @@ public static class AppPackageInstaller
     private static async Task AddPackageAsync(
         PackageManager packageManager,
         string packagePath,
+        IReadOnlyCollection<Uri> dependencyPackageUris,
         IProgress<InstallProgress>? progress,
         DeploymentOptions deploymentOptions,
         CancellationToken cancellationToken
     )
     {
-        var packageUri = new Uri(packagePath);
+        var packageUri = new Uri(Path.GetFullPath(packagePath));
 
         var deploymentOperation = packageManager.AddPackageAsync(
             packageUri,
-            Array.Empty<Uri>(),
+            dependencyPackageUris,
             deploymentOptions
         );
 
@@ -74,6 +75,8 @@ public static class AppPackageInstaller
             .Where(IsPackageFile)
             .ToList();
 
+        var dependencyUris = deps.Select(p => new Uri(Path.GetFullPath(p))).ToList();
+
         progress?.Report(new InstallProgress(0, "Starting", "Install"));
 
         var packageManager = new PackageManager();
@@ -87,6 +90,7 @@ public static class AppPackageInstaller
             await AddPackageAsync(
                 packageManager,
                 packagePath,
+                dependencyUris,
                 progress,
                 options,
                 cancellationToken
@@ -96,28 +100,12 @@ public static class AppPackageInstaller
         {
             logger?.LogError(
                 ex,
-                "Main package install failed | Path={PackagePath} | IgnoreVersion={IgnoreVersion}",
+                "Package install failed | Path={PackagePath} | Dependencies={DependencyCount} | IgnoreVersion={IgnoreVersion}",
                 packagePath,
+                dependencyUris.Count,
                 ignoreVersion
             );
             throw;
-        }
-
-        foreach (var dep in deps)
-        {
-            try
-            {
-                await AddPackageAsync(packageManager, dep, progress: null, options, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogWarning(
-                    ex,
-                    "Dependency package install failed and was ignored | Path={DependencyPath} | IgnoreVersion={IgnoreVersion}",
-                    dep,
-                    ignoreVersion
-                );
-            }
         }
 
         progress?.Report(new InstallProgress(100, "Completed", "Install"));

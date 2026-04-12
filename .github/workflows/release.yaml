@@ -1,0 +1,139 @@
+name: Build and Draft Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (for example: 1.2.3.4 or v1.2.3.4)"
+        required: true
+        default: "1.0.0.0"
+        type: string
+
+jobs:
+  prepare:
+    name: Prepare Release Version
+    runs-on: ubuntu-latest
+    outputs:
+      release_version: ${{ steps.version.outputs.release_version }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
+
+    steps:
+      - name: Normalize and Validate Version
+        id: version
+        shell: pwsh
+        run: |
+          $raw = "${{ github.event.inputs.version }}".Trim()
+          if ([string]::IsNullOrWhiteSpace($raw)) {
+            throw "Version input cannot be empty."
+          }
+
+          $normalized = if ($raw.StartsWith('v', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $raw.Substring(1)
+          } else {
+            $raw
+          }
+
+          $parsed = $null
+          if (-not [System.Version]::TryParse($normalized, [ref]$parsed)) {
+            throw "Invalid version '$raw'. Use numeric version format like 1.2.3.4 (optional v prefix)."
+          }
+
+          "release_version=$normalized" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "release_tag=v$normalized" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+  build:
+    name: Build ${{ matrix.arch }}
+    needs: prepare
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64, x86, arm64]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Publish WinUI 3 App
+        shell: pwsh
+        run: >
+          dotnet publish Raven/Raven.csproj
+          -c Release
+          -r win-${{ matrix.arch }}
+          --self-contained false
+          -o ./publish_output
+          -p:Version=${{ needs.prepare.outputs.release_version }}
+          -p:AssemblyVersion=${{ needs.prepare.outputs.release_version }}
+          -p:FileVersion=${{ needs.prepare.outputs.release_version }}
+          -p:InformationalVersion=${{ needs.prepare.outputs.release_tag }}
+
+      - name: Decode Certificate
+        shell: pwsh
+        run: |
+          $pfxCertBytes = [System.Convert]::FromBase64String("${{ secrets.CERT_BASE64 }}")
+          [System.IO.File]::WriteAllBytes("RavenCert.pfx", $pfxCertBytes)
+
+      - name: Sign App Files and Export Public Certificate
+        shell: pwsh
+        run: |
+          $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+            "RavenCert.pfx",
+            "${{ secrets.CERT_PASSWORD }}"
+          )
+
+          Get-ChildItem -Path ./publish_output -Include *.exe,*.dll -Recurse | ForEach-Object {
+            Set-AuthenticodeSignature -FilePath $_.FullName -Certificate $cert -TimestampServer "http://timestamp.digicert.com" | Out-Null
+          }
+
+          $certBytes = $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+          [System.IO.File]::WriteAllBytes("./publish_output/RavenCert.cer", $certBytes)
+          [System.IO.File]::WriteAllBytes("RavenCert.cer", $certBytes)
+
+      - name: Create Zip Archive
+        shell: pwsh
+        run: |
+          Compress-Archive -Path ./publish_output/* -DestinationPath Raven-${{ needs.prepare.outputs.release_tag }}-win-${{ matrix.arch }}.zip
+
+      - name: Upload App Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Raven-${{ matrix.arch }}
+          path: Raven-${{ needs.prepare.outputs.release_tag }}-win-${{ matrix.arch }}.zip
+
+      - name: Upload Public Certificate Artifact
+        if: matrix.arch == 'x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Public-Certificate
+          path: RavenCert.cer
+
+  release:
+    name: Create Draft Release
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+          merge-multiple: true
+
+      - name: Create Draft GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
+          name: Raven ${{ needs.prepare.outputs.release_tag }}
+          draft: true
+          generate_release_notes: true
+          files: |
+            ./artifacts/*.zip
+            ./artifacts/*.cer

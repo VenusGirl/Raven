@@ -156,6 +156,7 @@
                                             FontSize="14"
                                             Text="{x:Bind AppData.Rating, Mode=OneWay, Converter={StaticResource OneDecimalPlaceConverter}}" />
                                         <FontIcon
+                                            FontFamily="{StaticResource SymbolThemeFontFamily}"
                                             FontSize="12"
                                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                             Glyph="" />
@@ -177,7 +178,7 @@
                                 Background="Transparent"
                                 BorderBrush="Transparent"
                                 BorderThickness="0">
-                                <FontIcon FontSize="16" Glyph="" />
+                                <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" FontSize="16" Glyph="" />
                                 <Button.Flyout>
                                     <MenuFlyout
                                         FlyoutBase.ShouldConstrainToRootBounds="True"
@@ -359,6 +360,7 @@
                             PointerEntered="ShareButton_PointerEntered">
                             <FontIcon
                                 x:Name="ShareButtonIcon"
+                                FontFamily="{StaticResource SymbolThemeFontFamily}"
                                 FontSize="16"
                                 Glyph="&#xE72D;" />
                             <Button.Flyout>
@@ -378,7 +380,7 @@
                                         MinHeight="36"
                                         Click="CopyStoreLinkMenuItem_Click">
                                         <MenuFlyoutItem.Icon>
-                                            <FontIcon Glyph="" />
+                                            <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="" />
                                         </MenuFlyoutItem.Icon>
                                     </MenuFlyoutItem>
                                     <MenuFlyoutItem
@@ -387,7 +389,7 @@
                                         MinHeight="36"
                                         Click="CopyProductIdMenuItem_Click">
                                         <MenuFlyoutItem.Icon>
-                                            <FontIcon Glyph="" />
+                                            <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="" />
                                         </MenuFlyoutItem.Icon>
                                     </MenuFlyoutItem>
                                     <MenuFlyoutItem
@@ -396,7 +398,7 @@
                                         MinHeight="36"
                                         Click="CopyPackageFamilyNameMenuItem_Click">
                                         <MenuFlyoutItem.Icon>
-                                            <FontIcon Glyph="" />
+                                            <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="" />
                                         </MenuFlyoutItem.Icon>
                                     </MenuFlyoutItem>
                                 </MenuFlyout>
@@ -450,7 +452,7 @@
                             VerticalAlignment="Center"
                             Click="StopButton_Click"
                             Style="{StaticResource TransparentButtonStyle}">
-                            <FontIcon Glyph="" />
+                            <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="" />
                         </Button>
                     </Grid>
                     <!--  Screenshots Section  -->
@@ -485,6 +487,7 @@
                                     Margin="0,0,1,0"
                                     HorizontalAlignment="Center"
                                     VerticalAlignment="Center"
+                                    FontFamily="{StaticResource SymbolThemeFontFamily}"
                                     FontSize="15"
                                     Foreground="{ThemeResource TextFillColorPrimaryBrush}"
                                     Glyph="" />
@@ -541,6 +544,7 @@
                                     Margin="1,0,0,0"
                                     HorizontalAlignment="Center"
                                     VerticalAlignment="Center"
+                                    FontFamily="{StaticResource SymbolThemeFontFamily}"
                                     FontSize="15"
                                     Foreground="{ThemeResource TextFillColorPrimaryBrush}"
                                     Glyph="" />
@@ -655,6 +659,7 @@
                 BorderThickness="0"
                 Click="LightboxClose_Click">
                 <FontIcon
+                    FontFamily="{StaticResource SymbolThemeFontFamily}"
                     FontSize="18"
                     Foreground="White"
                     Glyph="" />
@@ -690,7 +695,7 @@
                     BorderThickness="1"
                     Click="LightboxLeft_Click"
                     CornerRadius="24">
-                    <FontIcon FontSize="16" Glyph="" />
+                    <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" FontSize="16" Glyph="" />
                 </Button>
             </Border>
             <Border
@@ -712,7 +717,7 @@
                     BorderThickness="1"
                     Click="LightboxRight_Click"
                     CornerRadius="24">
-                    <FontIcon FontSize="16" Glyph="" />
+                    <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" FontSize="16" Glyph="" />
                 </Button>
             </Border>
             <TextBlock

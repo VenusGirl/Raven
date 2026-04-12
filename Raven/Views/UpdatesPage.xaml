@@ -60,7 +60,7 @@
         Visibility="{x:Bind ViewModel.IsChecking, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
       >
         <StackPanel Orientation="Horizontal" Spacing="8">
-          <FontIcon FontSize="12" Glyph="" />
+          <SymbolIcon Symbol="Stop" />
           <TextBlock x:Uid="UpdatesPage_Stop" />
         </StackPanel>
       </Button>
@@ -76,6 +76,7 @@
     >
       <FontIcon
         HorizontalAlignment="Center"
+        FontFamily="{StaticResource SymbolThemeFontFamily}"
         FontSize="48"
         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
         Glyph=""
@@ -119,6 +120,7 @@
           HorizontalTextAlignment="Left"
           Style="{ThemeResource BodyTextBlockStyle}"
           Text="{x:Bind ViewModel.CheckingProgressDots, Mode=OneWay}"
+
         />
       </StackPanel>
     </StackPanel>
@@ -278,7 +280,10 @@
                   Tag="{x:Bind ProductId}"
                   Visibility="{x:Bind IsCancelButtonVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                 >
-                  <FontIcon FontSize="12" Glyph="" />
+                  <FontIcon
+                    FontFamily="{StaticResource SymbolThemeFontFamily}"
+                    FontSize="12"
+                    Glyph="" />
                 </Button>
               </Grid>
             </DataTemplate>

@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
@@ -18,6 +19,7 @@ public sealed partial class AppPage : Page
     public AppInfo AppData { get; set; } = new();
     public UIUpdateService UpdateService { get; }
     private readonly ILocaleService _localeService;
+    private readonly ILogger<AppPage> _logger;
 
     private CancellationTokenSource? _productLoadCts;
     private CancellationTokenSource? _downloadCts;
@@ -63,6 +65,7 @@ public sealed partial class AppPage : Page
     {
         ViewModel = App.GetService<AppViewModel>();
         _localeService = App.GetService<ILocaleService>();
+        _logger = App.GetService<ILogger<AppPage>>();
         InitializeComponent();
         UpdateService = new UIUpdateService(this.DispatcherQueue);
         InstallButtonFlyout.Opening += OnInstallButtonFlyoutOpening;
@@ -612,6 +615,12 @@ public sealed partial class AppPage : Page
             UpdateService.StopStatusAnimation();
             downloadManager.UpdateDownloadStatusText(productId, string.Format("Download_Status_InstallFailed".GetLocalized(), ex.Message));
             downloadManager.UpdateDownloadStatus(productId, DownloadStatus.Failed);
+            _logger.LogError(
+                ex,
+                "Force install failed | ProductId={ProductId} | MainPackage={MainPackagePath}",
+                item.ProductId,
+                mainPackagePath
+            );
 
             // Force install already failed: do not re-offer force install.
             await InstallHelper.ShowInstallationErrorDialogAsync(
@@ -1276,6 +1285,13 @@ public sealed partial class AppPage : Page
         {
             Debug.WriteLine(ex);
             UpdateService.StopStatusAnimation();
+            _logger.LogError(
+                ex,
+                "Install failed in app page flow | ProductId={ProductId} | IsDownloadOnly={IsDownloadOnly} | IsUnpackaged={IsUnpackaged}",
+                productId,
+                isDownloadOnly,
+                isUnpackaged
+            );
             HandleDownloadError(productId, "AppPage_Error_FailedToInstall".GetLocalized(), DownloadStatus.Failed);
         }
         finally

@@ -403,7 +403,7 @@
             <NavigationView.FooterMenuItems>
                 <NavigationViewItem x:Uid="Shell_Updates" helpers:NavigationHelper.NavigateTo="Raven.ViewModels.UpdatesViewModel">
                     <NavigationViewItem.Icon>
-                        <FontIcon Glyph="" />
+                        <SymbolIcon Symbol="Sync" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem x:Uid="Shell_Downloads" helpers:NavigationHelper.NavigateTo="Raven.ViewModels.DownloadsViewModel">

@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Net;
+using Microsoft.Extensions.Logging;
 using Downloader;
 using StoreListings.Library;
 using Raven.Models;
@@ -74,6 +75,7 @@ public sealed class DownloadHelper
         const int UI_THROTTLE_MS = 250;
 
         var downloadManager = DownloadManagerService.Instance;
+        var installLogger = App.GetService<ILogger<DownloadHelper>>();
 
         // Clear any leftover details from previous attempts
         downloadManager.UpdateDownloadDetailsText(productId, string.Empty);
@@ -745,6 +747,13 @@ public sealed class DownloadHelper
         {
             animator.Stop(downloadItem);
             updateService.StopStatusAnimation();
+            installLogger.LogError(
+                ex,
+                "Install failed in download flow | ProductId={ProductId} | MainPackage={MainPackagePath} | Dependencies={DependencyCount}",
+                productId,
+                mainPackagePath,
+                depPaths.Count
+            );
             downloadItem.LastInstallError = ex;
             downloadManager.UpdateDownloadStatusText(productId, string.Format("Download_Status_InstallFailed".GetLocalized(), ex.Message));
             downloadManager.UpdateDownloadStatus(productId, Raven.Models.DownloadStatus.Failed);
