@@ -165,8 +165,7 @@
                             Grid.Row="2"
                             Margin="0,2,0,0"
                             HorizontalAlignment="Left"
-                            Click="OpenLogsFolderButton_Click"
-                            Content="Open logs folder" />
+                            Click="OpenLogsFolderButton_Click" />
                     </Grid>
                     <Grid
                         Padding="20"
@@ -176,6 +175,7 @@
                         CornerRadius="8"
                         RowSpacing="10">
                         <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
@@ -203,6 +203,12 @@
                             <HyperlinkButton x:Uid="SettingsPage_LicenseLink" Click="LicenseLink_Click" />
                             <HyperlinkButton x:Uid="SettingsPage_ThirdPartyLicensesLink" Click="ThirdPartyLicensesLink_Click" />
                         </StackPanel>
+                        <Button
+                            x:Uid="Settings_AppUpdatesButton"
+                            Grid.Row="4"
+                            Margin="0,8,0,0"
+                            HorizontalAlignment="Left"
+                            Click="CheckForAppUpdatesButton_Click" />
                     </Grid>
                 </StackPanel>
             </ScrollViewer>

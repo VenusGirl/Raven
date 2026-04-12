@@ -1,0 +1,222 @@
+using System.Diagnostics;
+using System.IO.Compression;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Text.Json;
+
+namespace Raven.Services;
+
+public sealed class GitHubUpdaterService
+{
+    private const string Owner = "mjishnu";
+    private const string Repository = "sample";
+
+    private static readonly HttpClient HttpClient = CreateHttpClient();
+
+    public async Task<GitHubReleaseInfo> GetLatestReleaseAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await HttpClient.GetAsync(
+            $"https://api.github.com/repos/{Owner}/{Repository}/releases/latest",
+            cancellationToken
+        );
+
+        response.EnsureSuccessStatusCode();
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+
+        var root = document.RootElement;
+        var tagName = root.GetProperty("tag_name").GetString() ?? string.Empty;
+        var latestVersion = TryParseVersion(tagName);
+
+        var assets = root.GetProperty("assets").EnumerateArray();
+        var releaseAsset = SelectZipAsset(assets);
+        if (releaseAsset is null)
+            throw new InvalidOperationException("No zip asset found in the latest release.");
+
+        var currentVersion = Assembly.GetExecutingAssembly().GetName().Version;
+
+        return new GitHubReleaseInfo(
+            tagName,
+            latestVersion,
+            currentVersion,
+            releaseAsset.Value.name,
+            releaseAsset.Value.downloadUrl
+        );
+    }
+
+    public async Task StartUpdateAsync(CancellationToken cancellationToken = default)
+    {
+        var release = await GetLatestReleaseAsync(cancellationToken);
+        await StartUpdateAsync(release, progress: null, cancellationToken);
+    }
+
+    public async Task StartUpdateAsync(
+        GitHubReleaseInfo release,
+        IProgress<double>? progress,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (release.IsUpToDate)
+            return;
+
+        var process = Process.GetCurrentProcess();
+        var executablePath = process.MainModule?.FileName;
+        if (string.IsNullOrWhiteSpace(executablePath))
+            throw new InvalidOperationException("Failed to locate the current executable.");
+
+        var applicationDirectory = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var updaterExecutablePath = Path.Combine(applicationDirectory, "Raven.Updater.exe");
+        if (!File.Exists(updaterExecutablePath))
+            throw new FileNotFoundException("Updater executable was not found.", updaterExecutablePath);
+
+        var updateRoot = Path.Combine(Path.GetTempPath(), "RavenUpdater", Guid.NewGuid().ToString("N"));
+        var zipPath = Path.Combine(updateRoot, release.AssetName);
+        var extractPath = Path.Combine(updateRoot, "extract");
+
+        Directory.CreateDirectory(updateRoot);
+        Directory.CreateDirectory(extractPath);
+
+        await DownloadAssetAsync(release.DownloadUrl, zipPath, progress, cancellationToken);
+        ZipFile.ExtractToDirectory(zipPath, extractPath, overwriteFiles: true);
+
+        var sourceDirectory = ResolveSourceDirectory(extractPath);
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = updaterExecutablePath,
+            UseShellExecute = true,
+            WorkingDirectory = applicationDirectory,
+        };
+
+        startInfo.ArgumentList.Add("--pid");
+        startInfo.ArgumentList.Add(process.Id.ToString());
+        startInfo.ArgumentList.Add("--source");
+        startInfo.ArgumentList.Add(sourceDirectory);
+        startInfo.ArgumentList.Add("--target");
+        startInfo.ArgumentList.Add(applicationDirectory);
+        startInfo.ArgumentList.Add("--exe");
+        startInfo.ArgumentList.Add(executablePath);
+        startInfo.ArgumentList.Add("--workspace");
+        startInfo.ArgumentList.Add(updateRoot);
+
+        Process.Start(startInfo);
+    }
+
+    private static async Task DownloadAssetAsync(
+        string downloadUrl,
+        string destinationPath,
+        IProgress<double>? progress,
+        CancellationToken cancellationToken
+    )
+    {
+        using var response = await HttpClient.GetAsync(
+            downloadUrl,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken
+        );
+
+        response.EnsureSuccessStatusCode();
+
+        var contentLength = response.Content.Headers.ContentLength;
+
+        await using var inputStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        await using var outputStream = File.Create(destinationPath);
+
+        var buffer = new byte[81920];
+        long totalRead = 0;
+        int bytesRead;
+
+        while ((bytesRead = await inputStream.ReadAsync(buffer, cancellationToken)) > 0)
+        {
+            await outputStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+            totalRead += bytesRead;
+
+            if (contentLength.HasValue && contentLength.Value > 0)
+            {
+                progress?.Report(Math.Clamp((double)totalRead / contentLength.Value, 0d, 1d));
+            }
+        }
+
+        progress?.Report(1d);
+    }
+
+    private static string ResolveSourceDirectory(string extractPath)
+    {
+        var directories = Directory.GetDirectories(extractPath);
+        if (directories.Length == 1)
+            return directories[0];
+
+        return extractPath;
+    }
+
+    private static (string name, string downloadUrl)? SelectZipAsset(JsonElement.ArrayEnumerator assets)
+    {
+        var preferredArchitectureToken = RuntimeInformation.ProcessArchitecture switch
+        {
+            Architecture.X64 => "x64",
+            Architecture.X86 => "x86",
+            Architecture.Arm64 => "arm64",
+            Architecture.Arm => "arm",
+            _ => string.Empty,
+        };
+
+        (string name, string downloadUrl)? fallback = null;
+
+        foreach (var asset in assets)
+        {
+            var name = asset.GetProperty("name").GetString();
+            var downloadUrl = asset.GetProperty("browser_download_url").GetString();
+
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(downloadUrl))
+                continue;
+
+            if (!name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            fallback ??= (name, downloadUrl);
+
+            if (!string.IsNullOrEmpty(preferredArchitectureToken)
+                && name.Contains(preferredArchitectureToken, StringComparison.OrdinalIgnoreCase))
+            {
+                return (name, downloadUrl);
+            }
+        }
+
+        return fallback;
+    }
+
+    private static Version? TryParseVersion(string tag)
+    {
+        if (string.IsNullOrWhiteSpace(tag))
+            return null;
+
+        var trimmed = tag.Trim();
+        if (trimmed.StartsWith('v') || trimmed.StartsWith('V'))
+            trimmed = trimmed[1..];
+
+        return Version.TryParse(trimmed, out var parsed) ? parsed : null;
+    }
+
+    private static HttpClient CreateHttpClient()
+    {
+        var client = new HttpClient();
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Raven-Updater");
+        client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+        return client;
+    }
+}
+
+public sealed record GitHubReleaseInfo(
+    string TagName,
+    Version? LatestVersion,
+    Version? CurrentVersion,
+    string AssetName,
+    string DownloadUrl
+)
+{
+    public bool IsUpToDate =>
+        LatestVersion is not null
+        && CurrentVersion is not null
+        && LatestVersion <= CurrentVersion;
+}

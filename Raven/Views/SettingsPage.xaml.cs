@@ -229,18 +229,20 @@ SOFTWARE.
 """;
 
     private readonly ILogger _runtimeLogger;
+    private readonly AppUpdatePromptService _appUpdatePromptService;
 
     public SettingsViewModel ViewModel { get; }
 
     public SettingsPage()
-        : this(App.GetService<ILoggerFactory>())
+        : this(App.GetService<ILoggerFactory>(), App.GetService<AppUpdatePromptService>())
     {
     }
 
-    public SettingsPage(ILoggerFactory loggerFactory)
+    public SettingsPage(ILoggerFactory loggerFactory, AppUpdatePromptService appUpdatePromptService)
     {
         ViewModel = App.GetService<SettingsViewModel>();
         _runtimeLogger = loggerFactory.CreateLogger("Raven.Runtime");
+        _appUpdatePromptService = appUpdatePromptService;
         InitializeComponent();
     }
 
@@ -315,6 +317,11 @@ SOFTWARE.
         {
             lightbox.Visibility = visibility;
         }
+    }
+
+    private async void CheckForAppUpdatesButton_Click(object sender, RoutedEventArgs e)
+    {
+        await _appUpdatePromptService.ShowManualUpdateDialogAsync(Content.XamlRoot);
     }
 
     private void OpenLogsFolderButton_Click(object sender, RoutedEventArgs e)

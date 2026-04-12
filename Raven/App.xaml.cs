@@ -121,6 +121,8 @@ public partial class App : Application
                     services.AddSingleton<UpdatesViewModel>();
 
                     services.AddSingleton<IStoreService, StoreService>();
+                    services.AddSingleton<GitHubUpdaterService>();
+                    services.AddSingleton<AppUpdatePromptService>();
 
                     // Configuration
                     services.Configure<LocalSettingsOptions>(

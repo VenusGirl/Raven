@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Raven.Contracts.Services;
 using Raven.Helpers;
+using Raven.Services;
 using Raven.ViewModels;
 using StoreListings.Library;
 using Windows.System;
@@ -18,11 +19,13 @@ public sealed partial class ShellPage : Page
     public ShellViewModel ViewModel { get; }
     private CancellationTokenSource? suggestionCancellationTokenSource;
     private readonly ILocaleService _localeService;
+    private readonly AppUpdatePromptService _appUpdatePromptService;
 
-    public ShellPage(ShellViewModel viewModel)
+    public ShellPage(ShellViewModel viewModel, AppUpdatePromptService appUpdatePromptService)
     {
         ViewModel = viewModel;
         _localeService = App.GetService<ILocaleService>();
+        _appUpdatePromptService = appUpdatePromptService;
         InitializeComponent();
 
         ViewModel.NavigationService.Frame = NavigationFrame;
@@ -126,11 +129,16 @@ public sealed partial class ShellPage : Page
         );
     }
 
-    private void OnLoaded(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    private async void OnLoaded(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
         TitleBarHelper.UpdateTitleBar(RequestedTheme);
         this.AddHandler(PointerPressedEvent, new PointerEventHandler(OnPagePointerPressed), true);
         RegisterBackForwardKeyboardAccelerators();
+
+        if (XamlRoot is null)
+            return;
+
+        await _appUpdatePromptService.CheckForUpdatesOnStartupAsync(XamlRoot);
     }
 
     private void OnPagePointerPressed(object sender, PointerRoutedEventArgs e)

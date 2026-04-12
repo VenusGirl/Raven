@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Raven.Core", "Raven.Core\Ra
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StoreListings.Library", "StoreListings\StoreListings.Library\StoreListings.Library.csproj", "{7ECB8BE1-7A42-EEC6-1C6A-5A80FAF0B031}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Raven.Updater", "Raven.Updater\Raven.Updater.csproj", "{191F99EA-3A94-5C92-3400-0322762E4260}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -77,6 +79,22 @@ Global
 		{7ECB8BE1-7A42-EEC6-1C6A-5A80FAF0B031}.Release|x64.Build.0 = Release|Any CPU
 		{7ECB8BE1-7A42-EEC6-1C6A-5A80FAF0B031}.Release|x86.ActiveCfg = Release|Any CPU
 		{7ECB8BE1-7A42-EEC6-1C6A-5A80FAF0B031}.Release|x86.Build.0 = Release|Any CPU
+		{191F99EA-3A94-5C92-3400-0322762E4260}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{191F99EA-3A94-5C92-3400-0322762E4260}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{191F99EA-3A94-5C92-3400-0322762E4260}.Debug|arm64.ActiveCfg = Debug|Any CPU
+		{191F99EA-3A94-5C92-3400-0322762E4260}.Debug|arm64.Build.0 = Debug|Any CPU
+		{191F99EA-3A94-5C92-3400-0322762E4260}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{191F99EA-3A94-5C92-3400-0322762E4260}.Debug|x64.Build.0 = Debug|Any CPU
+		{191F99EA-3A94-5C92-3400-0322762E4260}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{191F99EA-3A94-5C92-3400-0322762E4260}.Debug|x86.Build.0 = Debug|Any CPU
+		{191F99EA-3A94-5C92-3400-0322762E4260}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{191F99EA-3A94-5C92-3400-0322762E4260}.Release|Any CPU.Build.0 = Release|Any CPU
+		{191F99EA-3A94-5C92-3400-0322762E4260}.Release|arm64.ActiveCfg = Release|Any CPU
+		{191F99EA-3A94-5C92-3400-0322762E4260}.Release|arm64.Build.0 = Release|Any CPU
+		{191F99EA-3A94-5C92-3400-0322762E4260}.Release|x64.ActiveCfg = Release|Any CPU
+		{191F99EA-3A94-5C92-3400-0322762E4260}.Release|x64.Build.0 = Release|Any CPU
+		{191F99EA-3A94-5C92-3400-0322762E4260}.Release|x86.ActiveCfg = Release|Any CPU
+		{191F99EA-3A94-5C92-3400-0322762E4260}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

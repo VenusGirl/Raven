@@ -219,6 +219,60 @@
   <data name="Settings_DiagnosticsLogsButton.Content" xml:space="preserve">
     <value>Open logs folder</value>
   </data>
+  <data name="Settings_AppUpdates.Text" xml:space="preserve">
+    <value>Application updates</value>
+  </data>
+  <data name="Settings_AppUpdatesDescription.Text" xml:space="preserve">
+    <value>Check GitHub for the latest release and update Raven automatically.</value>
+  </data>
+  <data name="Settings_AppUpdatesButton.Content" xml:space="preserve">
+    <value>Check for updates</value>
+  </data>
+  <data name="Settings_UpdaterConfirmTitle" xml:space="preserve">
+    <value>Update available</value>
+  </data>
+  <data name="Settings_UpdaterConfirmContent" xml:space="preserve">
+    <value>Version {0} is ready to install. The app will restart to apply the update.</value>
+  </data>
+  <data name="Settings_UpdaterConfirmPrimary" xml:space="preserve">
+    <value>Install</value>
+  </data>
+  <data name="Settings_UpdaterAlreadyLatestTitle" xml:space="preserve">
+    <value>All set</value>
+  </data>
+  <data name="Settings_UpdaterAlreadyLatestContent" xml:space="preserve">
+    <value>You have the latest version.</value>
+  </data>
+  <data name="Settings_UpdaterErrorTitle" xml:space="preserve">
+    <value>Something went wrong</value>
+  </data>
+  <data name="Settings_UpdaterErrorContent" xml:space="preserve">
+    <value>The update could not be completed. {0}</value>
+  </data>
+  <data name="Settings_UpdaterDialogClose" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="Settings_UpdaterDialogCancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Settings_UpdaterCheckingTitle" xml:space="preserve">
+    <value>Checking for updates</value>
+  </data>
+  <data name="Settings_UpdaterCheckingContent" xml:space="preserve">
+    <value>Looking for the latest version.</value>
+  </data>
+  <data name="Settings_UpdaterCheckCanceledContent" xml:space="preserve">
+    <value>Check canceled. Try again anytime.</value>
+  </data>
+  <data name="Settings_UpdaterStartupCheckbox" xml:space="preserve">
+    <value>Check for updates on startup</value>
+  </data>
+  <data name="Settings_UpdaterProgressPercent" xml:space="preserve">
+    <value>{0}%</value>
+  </data>
+  <data name="Settings_UpdaterInstallingTitle" xml:space="preserve">
+    <value>Installing update</value>
+  </data>
   <data name="CardView_Loading.Text" xml:space="preserve">
     <value>Loading</value>
   </data>
