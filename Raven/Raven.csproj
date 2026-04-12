@@ -12,7 +12,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UseWinUI>true</UseWinUI>
-    <EnableMsixTooling>false</EnableMsixTooling>
     <WindowsPackageType>None</WindowsPackageType>
     <SupportedOSPlatformVersion>10.0.18362.0</SupportedOSPlatformVersion>
     <AssemblyName>Raven</AssemblyName>
@@ -21,9 +20,9 @@
   </PropertyGroup>
   <ItemGroup>
     <None Remove="Views\AppPage.xaml" />
-    <None Remove="Views\CardViewControl.xaml" />
     <None Remove="Views\DownloadsPage.xaml" />
     <None Remove="Views\InstallationsPage.xaml" />
+    <None Remove="Views\Shared\CardViewControl.xaml" />
   </ItemGroup>
   <ItemGroup>
     <None Remove="Views\UpdatesPage.xaml" />
@@ -51,12 +50,6 @@
     <None Update="appsettings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="Raven.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="Raven3.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
     <None Update="Views\Dialogs\UpdateDialogContent.xaml">
       <Generator>MSBuild:Compile</Generator>
     </None>
@@ -66,7 +59,7 @@
     <Page Update="Views\DownloadsPage.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Update="Views\CardViewControl.xaml">
+    <Page Update="Views\Shared\CardViewControl.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Update="Views\AppPage.xaml">
@@ -75,9 +68,6 @@
     <Page Update="Views\InstallationsPage.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
-  </ItemGroup>
-  <ItemGroup Condition="'$(DisableMsixProjectCapabilityAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
-    <ProjectCapability Include="Msix" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Views\Shared\" />
@@ -91,9 +81,6 @@
     <FileVersion>1.0.0.0</FileVersion>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <PackageIcon></PackageIcon>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
-    <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
   </PropertyGroup>
   <!-- Copy Raven.Updater files next to the app output after build -->
   <Target Name="CopyRavenUpdater" AfterTargets="Build">

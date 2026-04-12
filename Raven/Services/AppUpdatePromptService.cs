@@ -10,6 +10,8 @@ namespace Raven.Services;
 public sealed class AppUpdatePromptService
 {
     private const string CheckUpdatesOnStartupKey = "CheckForAppUpdatesOnStartup";
+    private const string RuntimeLoggerCategory = "Raven.Runtime";
+    private const string DefaultCheckForUpdatesLabel = "Check for updates";
 
     private readonly GitHubUpdaterService _gitHubUpdaterService;
     private readonly ILocalSettingsService _localSettingsService;
@@ -23,7 +25,7 @@ public sealed class AppUpdatePromptService
     {
         _gitHubUpdaterService = gitHubUpdaterService;
         _localSettingsService = localSettingsService;
-        _logger = loggerFactory.CreateLogger("Raven.Runtime");
+        _logger = loggerFactory.CreateLogger(RuntimeLoggerCategory);
     }
 
     public async Task ShowManualUpdateDialogAsync(
@@ -32,21 +34,19 @@ public sealed class AppUpdatePromptService
     )
     {
         var dialogContent = new UpdateDialogContent();
-        dialogContent.StartupPreferenceCheckBoxControl.IsChecked = await GetCheckOnStartupEnabledAsync();
+        var checkOnStartup = dialogContent.StartupPreferenceCheckBoxControl;
+        checkOnStartup.IsChecked = await GetCheckOnStartupEnabledAsync();
 
         var messageTextBlock = dialogContent.StatusMessageTextBlockControl;
-        var checkOnStartup = dialogContent.StartupPreferenceCheckBoxControl;
         var progressBar = dialogContent.StatusProgressBarControl;
         var progressText = dialogContent.StatusProgressTextBlockControl;
 
         var closeLabel = "Settings_UpdaterDialogClose".GetLocalized();
         var cancelLabel = "Settings_UpdaterDialogCancel".GetLocalized();
-        var checkForUpdatesLabel = "Settings_AppUpdatesButton.Content".GetLocalized();
-
-        if (string.IsNullOrWhiteSpace(checkForUpdatesLabel))
-        {
-            checkForUpdatesLabel = "Check for updates";
-        }
+        var checkForUpdatesLabel = GetLocalizedOrDefault(
+            "Settings_AppUpdatesButton.Content",
+            DefaultCheckForUpdatesLabel
+        );
 
         var dialog = new ContentDialog
         {
@@ -55,38 +55,10 @@ public sealed class AppUpdatePromptService
             XamlRoot = xamlRoot,
         };
 
-        var statusAnimationService = new UIUpdateService(dialogContent.DispatcherQueue);
-        void OnStatusAnimationPropertyChanged(
-            object? sender,
-            System.ComponentModel.PropertyChangedEventArgs e
-        )
-        {
-            if (e.PropertyName == nameof(UIUpdateService.StatusText))
-            {
-                messageTextBlock.Text = statusAnimationService.StatusText;
-            }
-        }
-
-        statusAnimationService.PropertyChanged += OnStatusAnimationPropertyChanged;
-
-        static string NormalizeAnimatedBase(string text) => text.TrimEnd(' ', '.', '…');
-
-        void StartStatusMessageAnimation(string baseText)
-        {
-            var normalized = NormalizeAnimatedBase(baseText);
-            statusAnimationService.StartStatusAnimation(
-                string.IsNullOrWhiteSpace(normalized) ? baseText : normalized
-            );
-        }
-
-        void StopStatusMessageAnimation(string? message = null)
-        {
-            statusAnimationService.StopStatusAnimation();
-            if (message is not null)
-            {
-                messageTextBlock.Text = message;
-            }
-        }
+        using var statusAnimation = new StatusAnimationController(
+            dialogContent,
+            messageTextBlock
+        );
 
         var hasPersistedStartupPreference = false;
         var isChecking = false;
@@ -96,31 +68,59 @@ public sealed class AppUpdatePromptService
         CancellationTokenSource? checkCts = null;
         CancellationTokenSource? downloadCts = null;
 
+        void SetCheckActionState(string? messageOverride = null)
+        {
+            statusAnimation.Stop(
+                messageOverride ?? "Settings_UpdaterCheckCanceledContent".GetLocalized()
+            );
+
+            SetStartupPreferenceVisibility(checkOnStartup, isVisible: true);
+            ResetProgressUi(progressBar, progressText);
+            SetDialogButtons(
+                dialog,
+                primaryText: checkForUpdatesLabel,
+                isPrimaryEnabled: true,
+                closeText: closeLabel
+            );
+        }
+
+        void SetUpdateAvailableState(GitHubReleaseInfo release)
+        {
+            var latestLabel = release.LatestVersion?.ToString() ?? release.TagName;
+            dialog.Title = "Settings_UpdaterConfirmTitle".GetLocalized();
+            statusAnimation.Stop(
+                string.Format("Settings_UpdaterConfirmContent".GetLocalized(), latestLabel)
+            );
+
+            SetStartupPreferenceVisibility(checkOnStartup, isVisible: true);
+            ResetProgressUi(progressBar, progressText);
+            SetDialogButtons(
+                dialog,
+                primaryText: "Settings_UpdaterConfirmPrimary".GetLocalized(),
+                isPrimaryEnabled: true,
+                closeText: closeLabel
+            );
+        }
+
         async Task StartManualCheckAsync()
         {
-            checkCts?.Cancel();
-            checkCts?.Dispose();
-            checkCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-
+            checkCts = ReplaceTokenSource(checkCts, cancellationToken);
             availableRelease = null;
             isChecking = true;
+
             _logger.LogInformation("Update check started");
 
             dialog.Title = "Settings_UpdaterCheckingTitle".GetLocalized();
-            StartStatusMessageAnimation("Settings_UpdaterCheckingContent".GetLocalized());
+            statusAnimation.Start("Settings_UpdaterCheckingContent".GetLocalized());
 
-            checkOnStartup.Visibility = Visibility.Collapsed;
-            checkOnStartup.IsEnabled = false;
-
-            progressBar.IsIndeterminate = true;
-            progressBar.Value = 0;
-            progressBar.Visibility = Visibility.Visible;
-            progressText.Visibility = Visibility.Collapsed;
-
-            dialog.PrimaryButtonText = checkForUpdatesLabel;
-            dialog.IsPrimaryButtonEnabled = false;
-            dialog.IsSecondaryButtonEnabled = true;
-            dialog.CloseButtonText = cancelLabel;
+            SetStartupPreferenceVisibility(checkOnStartup, isVisible: false);
+            ShowCheckingProgress(progressBar, progressText);
+            SetDialogButtons(
+                dialog,
+                primaryText: checkForUpdatesLabel,
+                isPrimaryEnabled: false,
+                closeText: cancelLabel
+            );
 
             try
             {
@@ -129,20 +129,28 @@ public sealed class AppUpdatePromptService
 
                 if (release.IsUpToDate)
                 {
-                    _logger.LogInformation("Already on latest version: {CurrentVersion}", release.LatestVersion?.ToString() ?? release.TagName);
+                    _logger.LogInformation(
+                        "Already on latest version: {CurrentVersion}",
+                        release.LatestVersion?.ToString() ?? release.TagName
+                    );
                     dialog.Title = "Settings_UpdaterAlreadyLatestTitle".GetLocalized();
                     SetCheckActionState("Settings_UpdaterAlreadyLatestContent".GetLocalized());
                     return;
                 }
 
                 availableRelease = release;
-                _logger.LogInformation("Update available: version {LatestVersion}", release.LatestVersion?.ToString() ?? release.TagName);
+                _logger.LogInformation(
+                    "Update available: version {LatestVersion}",
+                    release.LatestVersion?.ToString() ?? release.TagName
+                );
                 SetUpdateAvailableState(release);
             }
             catch (OperationCanceledException)
             {
                 if (cancellationToken.IsCancellationRequested)
+                {
                     return;
+                }
 
                 isChecking = false;
                 _logger.LogInformation("Update check canceled by user");
@@ -158,124 +166,74 @@ public sealed class AppUpdatePromptService
                 isChecking = false;
 
                 dialog.Title = "Settings_UpdaterErrorTitle".GetLocalized();
-                StopStatusMessageAnimation(
+                statusAnimation.Stop(
                     string.Format("Settings_UpdaterErrorContent".GetLocalized(), ex.Message)
                 );
 
-                checkOnStartup.Visibility = Visibility.Visible;
-                checkOnStartup.IsEnabled = true;
-
-                progressBar.Visibility = Visibility.Collapsed;
-                progressText.Visibility = Visibility.Collapsed;
-
-                dialog.PrimaryButtonText = checkForUpdatesLabel;
-                dialog.IsPrimaryButtonEnabled = true;
-                dialog.IsSecondaryButtonEnabled = true;
-                dialog.CloseButtonText = closeLabel;
+                SetStartupPreferenceVisibility(checkOnStartup, isVisible: true);
+                ResetProgressUi(progressBar, progressText);
+                SetDialogButtons(
+                    dialog,
+                    primaryText: checkForUpdatesLabel,
+                    isPrimaryEnabled: true,
+                    closeText: closeLabel
+                );
             }
-        }
-
-        void SetCheckActionState(string? messageOverride = null)
-        {
-            StopStatusMessageAnimation(
-                messageOverride ?? "Settings_UpdaterCheckCanceledContent".GetLocalized()
-            );
-
-            checkOnStartup.Visibility = Visibility.Visible;
-            checkOnStartup.IsEnabled = true;
-
-            progressBar.Visibility = Visibility.Collapsed;
-            progressText.Visibility = Visibility.Collapsed;
-            progressBar.Value = 0;
-
-            dialog.PrimaryButtonText = checkForUpdatesLabel;
-            dialog.IsPrimaryButtonEnabled = true;
-            dialog.IsSecondaryButtonEnabled = true;
-            dialog.CloseButtonText = closeLabel;
-        }
-
-        void SetUpdateAvailableState(GitHubReleaseInfo release)
-        {
-            var latestLabel = release.LatestVersion?.ToString() ?? release.TagName;
-            dialog.Title = "Settings_UpdaterConfirmTitle".GetLocalized();
-            StopStatusMessageAnimation(
-                string.Format("Settings_UpdaterConfirmContent".GetLocalized(), latestLabel)
-            );
-
-            checkOnStartup.Visibility = Visibility.Visible;
-            checkOnStartup.IsEnabled = true;
-
-            progressBar.Visibility = Visibility.Collapsed;
-            progressText.Visibility = Visibility.Collapsed;
-
-            dialog.PrimaryButtonText = "Settings_UpdaterConfirmPrimary".GetLocalized();
-            dialog.IsPrimaryButtonEnabled = true;
-            dialog.IsSecondaryButtonEnabled = true;
-            dialog.CloseButtonText = closeLabel;
         }
 
         async Task StartManualUpdateAsync()
         {
             if (availableRelease is null)
+            {
                 return;
+            }
 
             try
             {
-                var enabled = checkOnStartup.IsChecked != false;
-                await _localSettingsService.SaveSettingAsync(CheckUpdatesOnStartupKey, enabled);
+                await PersistStartupPreferenceAsync(checkOnStartup);
                 hasPersistedStartupPreference = true;
 
                 isDownloading = true;
-                downloadCts?.Cancel();
-                downloadCts?.Dispose();
-                downloadCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                downloadCts = ReplaceTokenSource(downloadCts, cancellationToken);
 
-                _logger.LogInformation("Update installation started: version {Version}", availableRelease.LatestVersion?.ToString() ?? availableRelease.TagName);
+                _logger.LogInformation(
+                    "Update installation started: version {Version}",
+                    availableRelease.LatestVersion?.ToString() ?? availableRelease.TagName
+                );
 
-                progressBar.IsIndeterminate = false;
-                progressBar.Value = 0;
-                progressBar.Visibility = Visibility.Visible;
-                progressText.Visibility = Visibility.Visible;
-
-                checkOnStartup.Visibility = Visibility.Collapsed;
-                checkOnStartup.IsEnabled = false;
-
-                dialog.IsPrimaryButtonEnabled = false;
-                dialog.IsSecondaryButtonEnabled = true;
-                dialog.CloseButtonText = cancelLabel;
+                ShowInstallingProgress(progressBar, progressText);
+                SetStartupPreferenceVisibility(checkOnStartup, isVisible: false);
+                SetDialogButtons(
+                    dialog,
+                    primaryText: dialog.PrimaryButtonText,
+                    isPrimaryEnabled: false,
+                    closeText: cancelLabel
+                );
 
                 dialog.Title = "Settings_UpdaterInstallingTitle".GetLocalized();
-                StartStatusMessageAnimation("Status_Installing".GetLocalized());
-                progressBar.IsIndeterminate = false;
-                progressBar.Value = 0;
-                progressText.Text = "0%";
+                statusAnimation.Start("Status_Installing".GetLocalized());
 
-                var progress = new Progress<double>(value =>
-                {
-                    var percent = (int)Math.Round(value * 100);
-                    progressBar.Value = percent;
-                    progressText.Text = string.Format(
-                        "Settings_UpdaterProgressPercent".GetLocalized(),
-                        percent
-                    );
-                });
-
-                await _gitHubUpdaterService.StartUpdateAsync(availableRelease, progress, downloadCts.Token);
+                var progress = CreateProgressReporter(progressBar, progressText);
+                await _gitHubUpdaterService.StartUpdateAsync(
+                    availableRelease,
+                    progress,
+                    downloadCts.Token
+                );
                 Application.Current.Exit();
             }
             catch (OperationCanceledException)
             {
                 if (cancellationToken.IsCancellationRequested)
+                {
                     return;
+                }
 
                 isDownloading = false;
                 downloadCts?.Dispose();
                 downloadCts = null;
                 _logger.LogInformation("Update installation canceled by user");
 
-                progressBar.Visibility = Visibility.Collapsed;
-                progressText.Visibility = Visibility.Collapsed;
-                progressBar.Value = 0;
+                ResetProgressUi(progressBar, progressText);
 
                 if (availableRelease is not null)
                 {
@@ -295,20 +253,18 @@ public sealed class AppUpdatePromptService
                 downloadCts = null;
 
                 dialog.Title = "Settings_UpdaterErrorTitle".GetLocalized();
-                StopStatusMessageAnimation(
+                statusAnimation.Stop(
                     string.Format("Settings_UpdaterErrorContent".GetLocalized(), ex.Message)
                 );
 
-                checkOnStartup.Visibility = Visibility.Visible;
-                checkOnStartup.IsEnabled = true;
-
-                progressBar.Visibility = Visibility.Collapsed;
-                progressText.Visibility = Visibility.Collapsed;
-
-                dialog.PrimaryButtonText = checkForUpdatesLabel;
-                dialog.IsPrimaryButtonEnabled = true;
-                dialog.IsSecondaryButtonEnabled = true;
-                dialog.CloseButtonText = closeLabel;
+                SetStartupPreferenceVisibility(checkOnStartup, isVisible: true);
+                ResetProgressUi(progressBar, progressText);
+                SetDialogButtons(
+                    dialog,
+                    primaryText: checkForUpdatesLabel,
+                    isPrimaryEnabled: true,
+                    closeText: closeLabel
+                );
                 availableRelease = null;
             }
         }
@@ -324,7 +280,7 @@ public sealed class AppUpdatePromptService
 
             isClosing = true;
             downloadCts?.Cancel();
-            StopStatusMessageAnimation();
+            statusAnimation.Stop();
         };
 
         dialog.PrimaryButtonClick += (_, args) =>
@@ -332,7 +288,9 @@ public sealed class AppUpdatePromptService
             args.Cancel = true;
 
             if (isChecking || isDownloading)
+            {
                 return;
+            }
 
             if (availableRelease is null)
             {
@@ -356,18 +314,14 @@ public sealed class AppUpdatePromptService
         }
         catch
         {
-            // Ignore exceptions from check task as dialog is closed
         }
 
         checkCts?.Dispose();
         downloadCts?.Dispose();
-        statusAnimationService.StopStatusAnimation();
-        statusAnimationService.PropertyChanged -= OnStatusAnimationPropertyChanged;
 
         if (!hasPersistedStartupPreference)
         {
-            var isEnabled = checkOnStartup.IsChecked != false;
-            await _localSettingsService.SaveSettingAsync(CheckUpdatesOnStartupKey, isEnabled);
+            await PersistStartupPreferenceAsync(checkOnStartup);
         }
     }
 
@@ -378,15 +332,22 @@ public sealed class AppUpdatePromptService
     {
         var shouldCheck = await GetCheckOnStartupEnabledAsync();
         if (!shouldCheck)
+        {
             return;
+        }
 
         try
         {
             var release = await _gitHubUpdaterService.GetLatestReleaseAsync(cancellationToken);
             if (release.IsUpToDate)
+            {
                 return;
+            }
 
-            _logger.LogInformation("Update available on startup: version {Version}", release.LatestVersion?.ToString() ?? release.TagName);
+            _logger.LogInformation(
+                "Update available on startup: version {Version}",
+                release.LatestVersion?.ToString() ?? release.TagName
+            );
             await ShowAvailableUpdateDialogAsync(release, xamlRoot, cancellationToken);
         }
         catch (Exception ex)
@@ -408,13 +369,13 @@ public sealed class AppUpdatePromptService
         );
 
         var dialogContent = new UpdateDialogContent();
-        dialogContent.StatusMessageTextBlockControl.Text = confirmMessage;
-        dialogContent.StartupPreferenceCheckBoxControl.IsChecked = await GetCheckOnStartupEnabledAsync();
-
         var messageTextBlock = dialogContent.StatusMessageTextBlockControl;
         var checkOnStartup = dialogContent.StartupPreferenceCheckBoxControl;
         var progressBar = dialogContent.StatusProgressBarControl;
         var progressText = dialogContent.StatusProgressTextBlockControl;
+
+        messageTextBlock.Text = confirmMessage;
+        checkOnStartup.IsChecked = await GetCheckOnStartupEnabledAsync();
 
         var closeLabel = "Settings_UpdaterDialogClose".GetLocalized();
         var cancelLabel = "Settings_UpdaterDialogCancel".GetLocalized();
@@ -429,106 +390,67 @@ public sealed class AppUpdatePromptService
             XamlRoot = xamlRoot,
         };
 
-        var statusAnimationService = new UIUpdateService(dialogContent.DispatcherQueue);
-        void OnStatusAnimationPropertyChanged(
-            object? sender,
-            System.ComponentModel.PropertyChangedEventArgs e
-        )
-        {
-            if (e.PropertyName == nameof(UIUpdateService.StatusText))
-            {
-                messageTextBlock.Text = statusAnimationService.StatusText;
-            }
-        }
-
-        statusAnimationService.PropertyChanged += OnStatusAnimationPropertyChanged;
-
-        static string NormalizeAnimatedBase(string text) => text.TrimEnd(' ', '.', '…');
-
-        void StartStatusMessageAnimation(string baseText)
-        {
-            var normalized = NormalizeAnimatedBase(baseText);
-            statusAnimationService.StartStatusAnimation(
-                string.IsNullOrWhiteSpace(normalized) ? baseText : normalized
-            );
-        }
-
-        void StopStatusMessageAnimation(string? message = null)
-        {
-            statusAnimationService.StopStatusAnimation();
-            if (message is not null)
-            {
-                messageTextBlock.Text = message;
-            }
-        }
+        using var statusAnimation = new StatusAnimationController(
+            dialogContent,
+            messageTextBlock
+        );
 
         var hasPersistedStartupPreference = false;
         var isDownloading = false;
-        var isClosing = false;
         CancellationTokenSource? downloadCts = null;
 
         async Task StartStartupUpdateAsync()
         {
             try
             {
-                var enabled = checkOnStartup.IsChecked != false;
-                await _localSettingsService.SaveSettingAsync(CheckUpdatesOnStartupKey, enabled);
+                await PersistStartupPreferenceAsync(checkOnStartup);
                 hasPersistedStartupPreference = true;
 
                 isDownloading = true;
-                downloadCts?.Cancel();
-                downloadCts?.Dispose();
-                downloadCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                downloadCts = ReplaceTokenSource(downloadCts, cancellationToken);
 
-                _logger.LogInformation("Update installation started (startup): version {Version}", release.LatestVersion?.ToString() ?? release.TagName);
+                _logger.LogInformation(
+                    "Update installation started (startup): version {Version}",
+                    release.LatestVersion?.ToString() ?? release.TagName
+                );
 
-                progressBar.Visibility = Visibility.Visible;
-                progressText.Visibility = Visibility.Visible;
-                checkOnStartup.Visibility = Visibility.Collapsed;
-                checkOnStartup.IsEnabled = false;
-                dialog.IsPrimaryButtonEnabled = false;
-                dialog.IsSecondaryButtonEnabled = true;
-                dialog.CloseButtonText = cancelLabel;
+                ShowInstallingProgress(progressBar, progressText);
+                SetStartupPreferenceVisibility(checkOnStartup, isVisible: false);
+                SetDialogButtons(
+                    dialog,
+                    primaryText: dialog.PrimaryButtonText,
+                    isPrimaryEnabled: false,
+                    closeText: cancelLabel
+                );
 
                 dialog.Title = "Settings_UpdaterInstallingTitle".GetLocalized();
-                StartStatusMessageAnimation("Status_Installing".GetLocalized());
-                progressBar.IsIndeterminate = false;
-                progressBar.Value = 0;
-                progressText.Text = "0%";
+                statusAnimation.Start("Status_Installing".GetLocalized());
 
-                var progress = new Progress<double>(value =>
-                {
-                    var percent = (int)Math.Round(value * 100);
-                    progressBar.Value = percent;
-                    progressText.Text = string.Format(
-                        "Settings_UpdaterProgressPercent".GetLocalized(),
-                        percent
-                    );
-                });
-
+                var progress = CreateProgressReporter(progressBar, progressText);
                 await _gitHubUpdaterService.StartUpdateAsync(release, progress, downloadCts.Token);
                 Application.Current.Exit();
             }
             catch (OperationCanceledException)
             {
                 if (cancellationToken.IsCancellationRequested)
+                {
                     return;
+                }
 
                 isDownloading = false;
                 downloadCts?.Dispose();
                 downloadCts = null;
                 _logger.LogInformation("Update installation canceled by user (startup)");
 
-                progressBar.Visibility = Visibility.Collapsed;
-                progressText.Visibility = Visibility.Collapsed;
-                progressBar.Value = 0;
-
-                checkOnStartup.Visibility = Visibility.Visible;
-                checkOnStartup.IsEnabled = true;
-                dialog.IsPrimaryButtonEnabled = true;
-                dialog.IsSecondaryButtonEnabled = true;
-                dialog.CloseButtonText = closeLabel;
-                StopStatusMessageAnimation(confirmMessage);
+                ResetProgressUi(progressBar, progressText);
+                SetStartupPreferenceVisibility(checkOnStartup, isVisible: true);
+                SetDialogButtons(
+                    dialog,
+                    primaryText: dialog.PrimaryButtonText,
+                    isPrimaryEnabled: true,
+                    closeText: closeLabel
+                );
+                statusAnimation.Stop(confirmMessage);
             }
             catch (Exception ex)
             {
@@ -539,19 +461,18 @@ public sealed class AppUpdatePromptService
                 downloadCts = null;
 
                 dialog.Title = "Settings_UpdaterErrorTitle".GetLocalized();
-                StopStatusMessageAnimation(
+                statusAnimation.Stop(
                     string.Format("Settings_UpdaterErrorContent".GetLocalized(), ex.Message)
                 );
 
-                checkOnStartup.Visibility = Visibility.Visible;
-                checkOnStartup.IsEnabled = true;
-
-                progressBar.Visibility = Visibility.Collapsed;
-                progressText.Visibility = Visibility.Collapsed;
-
-                dialog.IsPrimaryButtonEnabled = true;
-                dialog.IsSecondaryButtonEnabled = true;
-                dialog.CloseButtonText = closeLabel;
+                SetStartupPreferenceVisibility(checkOnStartup, isVisible: true);
+                ResetProgressUi(progressBar, progressText);
+                SetDialogButtons(
+                    dialog,
+                    primaryText: dialog.PrimaryButtonText,
+                    isPrimaryEnabled: true,
+                    closeText: closeLabel
+                );
             }
         }
 
@@ -564,8 +485,7 @@ public sealed class AppUpdatePromptService
                 return;
             }
 
-            isClosing = true;
-            StopStatusMessageAnimation();
+            statusAnimation.Stop();
         };
 
         dialog.PrimaryButtonClick += (_, args) =>
@@ -573,24 +493,101 @@ public sealed class AppUpdatePromptService
             args.Cancel = true;
 
             if (isDownloading)
+            {
                 return;
+            }
 
             StartStartupUpdateAsync();
         };
 
         await dialog.ShowAsync();
 
-        isClosing = true;
         downloadCts?.Cancel();
         downloadCts?.Dispose();
-        statusAnimationService.StopStatusAnimation();
-        statusAnimationService.PropertyChanged -= OnStatusAnimationPropertyChanged;
 
         if (!hasPersistedStartupPreference)
         {
-            var isEnabled = checkOnStartup.IsChecked != false;
-            await _localSettingsService.SaveSettingAsync(CheckUpdatesOnStartupKey, isEnabled);
+            await PersistStartupPreferenceAsync(checkOnStartup);
         }
+    }
+
+    private static string GetLocalizedOrDefault(string key, string fallback)
+    {
+        var localized = key.GetLocalized();
+        return string.IsNullOrWhiteSpace(localized) ? fallback : localized;
+    }
+
+    private static CancellationTokenSource ReplaceTokenSource(
+        CancellationTokenSource? existing,
+        CancellationToken cancellationToken
+    )
+    {
+        existing?.Cancel();
+        existing?.Dispose();
+        return CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+    }
+
+    private static void SetStartupPreferenceVisibility(CheckBox checkOnStartup, bool isVisible)
+    {
+        checkOnStartup.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
+        checkOnStartup.IsEnabled = isVisible;
+    }
+
+    private static void ShowCheckingProgress(ProgressBar progressBar, TextBlock progressText)
+    {
+        progressBar.IsIndeterminate = true;
+        progressBar.Value = 0;
+        progressBar.Visibility = Visibility.Visible;
+        progressText.Visibility = Visibility.Collapsed;
+    }
+
+    private static void ShowInstallingProgress(ProgressBar progressBar, TextBlock progressText)
+    {
+        progressBar.IsIndeterminate = false;
+        progressBar.Value = 0;
+        progressBar.Visibility = Visibility.Visible;
+        progressText.Visibility = Visibility.Visible;
+        progressText.Text = "0%";
+    }
+
+    private static void ResetProgressUi(ProgressBar progressBar, TextBlock progressText)
+    {
+        progressBar.Visibility = Visibility.Collapsed;
+        progressText.Visibility = Visibility.Collapsed;
+        progressBar.Value = 0;
+    }
+
+    private static void SetDialogButtons(
+        ContentDialog dialog,
+        string primaryText,
+        bool isPrimaryEnabled,
+        string closeText
+    )
+    {
+        dialog.PrimaryButtonText = primaryText;
+        dialog.IsPrimaryButtonEnabled = isPrimaryEnabled;
+        dialog.IsSecondaryButtonEnabled = true;
+        dialog.CloseButtonText = closeText;
+    }
+
+    private static IProgress<double> CreateProgressReporter(
+        ProgressBar progressBar,
+        TextBlock progressText
+    )
+    {
+        var format = "Settings_UpdaterProgressPercent".GetLocalized();
+        return new Progress<double>(value =>
+        {
+            var percent = (int)Math.Round(value * 100);
+            progressBar.Value = percent;
+            progressText.Text = string.Format(format, percent);
+        });
+    }
+
+    private async Task PersistStartupPreferenceAsync(CheckBox checkOnStartup)
+    {
+        var enabled = checkOnStartup.IsChecked != false;
+        await _localSettingsService.SaveSettingAsync(CheckUpdatesOnStartupKey, enabled);
     }
 
     private async Task<bool> GetCheckOnStartupEnabledAsync()
@@ -598,12 +595,65 @@ public sealed class AppUpdatePromptService
         try
         {
             var value = await _localSettingsService.ReadSettingAsync<bool?>(CheckUpdatesOnStartupKey);
-            return value ?? true;
+            if (value.HasValue)
+            {
+                return value.Value;
+            }
+
+            await _localSettingsService.SaveSettingAsync(CheckUpdatesOnStartupKey, true);
+            return true;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to read startup check setting");
             return true;
+        }
+    }
+
+    private sealed class StatusAnimationController : IDisposable
+    {
+        private readonly UIUpdateService _statusAnimationService;
+        private readonly TextBlock _messageTextBlock;
+
+        public StatusAnimationController(UpdateDialogContent dialogContent, TextBlock messageTextBlock)
+        {
+            _messageTextBlock = messageTextBlock;
+            _statusAnimationService = new UIUpdateService(dialogContent.DispatcherQueue);
+            _statusAnimationService.PropertyChanged += OnStatusAnimationPropertyChanged;
+        }
+
+        public void Start(string baseText)
+        {
+            var normalized = baseText.TrimEnd(' ', '.', '…');
+            _statusAnimationService.StartStatusAnimation(
+                string.IsNullOrWhiteSpace(normalized) ? baseText : normalized
+            );
+        }
+
+        public void Stop(string? message = null)
+        {
+            _statusAnimationService.StopStatusAnimation();
+            if (message is not null)
+            {
+                _messageTextBlock.Text = message;
+            }
+        }
+
+        public void Dispose()
+        {
+            _statusAnimationService.StopStatusAnimation();
+            _statusAnimationService.PropertyChanged -= OnStatusAnimationPropertyChanged;
+        }
+
+        private void OnStatusAnimationPropertyChanged(
+            object? sender,
+            System.ComponentModel.PropertyChangedEventArgs e
+        )
+        {
+            if (e.PropertyName == nameof(UIUpdateService.StatusText))
+            {
+                _messageTextBlock.Text = _statusAnimationService.StatusText;
+            }
         }
     }
 }
