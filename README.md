@@ -54,6 +54,12 @@ Built with **WinUI 3** and **.NET 10**, Raven delivers a clean, fluent UI that f
 - **Localization-Ready** — UI strings use a resource-based localization system (`x:Uid`).
 - **Self-Update Check** — checks GitHub for newer releases of Raven itself.
 
+##  🛑 System requirements
+
+- **Windows 10** version 1809+
+- [**.NET 10**](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)
+- [**Windows App SDK Runtime**](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads)
+
 ## 🏗️ Architecture
 
 Raven follows the **MVVM pattern** and uses dependency injection via `Microsoft.Extensions.Hosting`.
@@ -96,21 +102,13 @@ Raven.sln
 | [Serilog](https://serilog.net/) | Structured logging |
 | [StoreListings](https://github.com/mjishnu/StoreListings) | Microsoft Store API wrapper (submodule) |
 
-## 📋 Prerequisites
+## 📋 Build Prerequisites
 
-- **Windows 10** version 1809 (build 17763) or later
 - **.NET 10 SDK**
 - **Visual Studio 2026** with the following workloads:
   - .NET Desktop Development
   - Windows App SDK / WinUI Development
   - Windows 10 SDK (26100)
-
-### Runtime requirements (for running Raven)
-
-Raven does **not** bundle these dependencies. Install them manually before running the app:
-
-- **.NET 10**: https://dotnet.microsoft.com/en-us/download/dotnet/10.0
-- **Windows App SDK Runtime**: https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads
 
 ## 🚀 Getting Started
 
@@ -166,6 +164,7 @@ Contributions are welcome! Here's how you can help:
 ## ⭐ Acknowledgements
 
 - [StoreListings](https://github.com/dongle-the-gadget/StoreListings) for the Microsoft Store API wrapper.
+- [Alt App Installer](https://github.com/mjishnu/alt-app-installer) the predecessor to this project.
 
 ## 📜 License
 
