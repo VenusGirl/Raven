@@ -47,10 +47,52 @@ public static class AppPackageInstaller
             progress?.Report(new InstallProgress(percent, p.state.ToString(), "Install"));
         };
 
-        var result = await deploymentOperation.AsTask(cancellationToken);
+        try
+        {
+            var result = await deploymentOperation.AsTask(cancellationToken);
 
-        if (result.ErrorText is { Length: > 0 })
-            throw new InvalidOperationException(result.ErrorText);
+            if (result.ErrorText is { Length: > 0 })
+                throw new InvalidOperationException(result.ErrorText);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // When the deployment engine fails, the raw COMException only carries an
+            // HRESULT (e.g. 0x80073CF9). The actual diagnostic detail — such as missing
+            // framework dependencies, disk errors, or signature issues — lives in the
+            // DeploymentResult attached to the async operation. Extract it so callers
+            // (and logs) see the real reason for the failure.
+            string? deploymentErrorText = null;
+            string? extendedErrorCode = null;
+
+            try
+            {
+                var result = deploymentOperation.GetResults();
+                if (result?.ErrorText is { Length: > 0 })
+                    deploymentErrorText = result.ErrorText;
+                if (result?.ExtendedErrorCode != null)
+                    extendedErrorCode = $"0x{result.ExtendedErrorCode.HResult:X8}";
+            }
+            catch
+            {
+                // Best-effort; if we can't read the result, fall through with the original exception.
+            }
+
+            if (!string.IsNullOrWhiteSpace(deploymentErrorText))
+            {
+                var message = $"Package deployment failed (HRESULT 0x{ex.HResult:X8}";
+                if (extendedErrorCode != null)
+                    message += $", Extended: {extendedErrorCode}";
+                message += $"): {deploymentErrorText}";
+
+                throw new InvalidOperationException(message, ex);
+            }
+
+            throw;
+        }
     }
 
     public static async Task InstallAsync(
