@@ -2,5 +2,20 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended"
+  ],
+  "timezone": "Asia/Kolkata",
+  "schedule": [
+    "before 1am"
+  ],
+  "dependencyDashboard": true,
+  "packageRules": [
+    {
+      "matchManagers": [ "github-actions" ],
+      "groupName": "github-actions dependencies"
+    },
+    {
+      "matchManagers": [ "nuget" ],
+      "groupName": "nuget dependencies"
+    }
   ]
 }
