@@ -60,6 +60,13 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      - name: Cache NuGet Packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
+          restore-keys: nuget-${{ runner.os }}-
+
       - name: Publish WinUI 3 App
         shell: pwsh
         run: >
@@ -108,7 +115,7 @@ jobs:
           New-Item -ItemType Directory -Path $bundleDir -Force | Out-Null
           Copy-Item -Path "RavenCert.cer" -Destination (Join-Path $bundleDir "raven.cer") -Force
           Copy-Item -Path ".github/scripts/Install-RavenCert.bat" -Destination (Join-Path $bundleDir "install_raven_cert.bat") -Force
-          Compress-Archive -Path (Join-Path $bundleDir "*") -DestinationPath "auto_install_cert.zip" -Force
+          Compress-Archive -Path (Join-Path $bundleDir "*") -DestinationPath "raven_cert.zip" -Force
 
       - name: Upload App Artifact
         uses: actions/upload-artifact@v7
@@ -116,19 +123,12 @@ jobs:
           name: Raven-${{ matrix.arch }}
           path: Raven-${{ needs.prepare.outputs.release_tag }}-win-${{ matrix.arch }}.zip
 
-      - name: Upload Public Certificate Artifact
-        if: matrix.arch == 'x64'
-        uses: actions/upload-artifact@v7
-        with:
-          name: Public-Certificate
-          path: RavenCert.cer
-
       - name: Upload Auto Install Certificate Artifact
         if: matrix.arch == 'x64'
         uses: actions/upload-artifact@v7
         with:
           name: Auto-Install-Cert
-          path: auto_install_cert.zip
+          path: raven_cert.zip
 
   release:
     name: Create Draft Release
@@ -153,4 +153,3 @@ jobs:
           generate_release_notes: true
           files: |
             ./artifacts/*.zip
-            ./artifacts/*.cer
