@@ -21,6 +21,8 @@ Raven is a modern, native Windows application that serves as a fully-featured al
 
 Built with **WinUI 3** and **.NET 10**, Raven delivers a clean, fluent UI that feels right at home on Windows 10 and 11.
 
+<img width="996" height="543" alt="raven" src="https://github.com/user-attachments/assets/40229b36-df5e-419d-aea7-ca374f6e2108" />
+
 ## ✨ Features
 
 ### 🔍 Search & Browse
@@ -58,7 +60,7 @@ Built with **WinUI 3** and **.NET 10**, Raven delivers a clean, fluent UI that f
 
 - **Windows 10** version 1809+
 - [**.NET 10**](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)
-- [**Windows App SDK Runtime**](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads)
+- [**Windows App SDK Runtime 1.8**](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads-archive#windows-app-sdk-18)
 
 ## 🌐 How to Run
 
