@@ -7,15 +7,28 @@
   "schedule": [
     "before 1am"
   ],
-  "dependencyDashboard": true,
+  "dependencyDashboard": false,
   "packageRules": [
     {
-      "matchManagers": [ "github-actions" ],
+      "matchManagers": [
+        "github-actions"
+      ],
       "groupName": "github-actions dependencies"
     },
     {
-      "matchManagers": [ "nuget" ],
+      "matchManagers": [
+        "nuget"
+      ],
       "groupName": "nuget dependencies"
+    },
+    {
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "digest"
+      ],
+      "automerge": true
     }
   ]
 }
