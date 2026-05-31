@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Microsoft.UI;
 using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml;
@@ -24,12 +25,14 @@ public sealed partial class CardViewControl : UserControl
     private bool isLoadingMore = false;
     private CancellationTokenSource? _loadingDotsCts;
     private readonly ILocaleService _localeService;
+    private readonly ILogger<CardViewControl> _logger;
     #endregion
 
     #region Constructor
     public CardViewControl()
     {
         _localeService = App.GetService<ILocaleService>();
+        _logger = App.GetService<ILogger<CardViewControl>>();
         InitializeComponent();
         scrollViewer.ViewChanged += ScrollViewer_ViewChanged;
         scrollViewer.Loaded += ScrollViewer_Loaded;
@@ -233,7 +236,13 @@ public sealed partial class CardViewControl : UserControl
         {
             success = false;
             errorText = ex.Message;
-            Debug.WriteLine(errorText);
+            _logger.LogError(
+                ex,
+                "Failed to load cards | ExceptionType={ExceptionType} | HResult=0x{HResult:X8} | Header={Header}",
+                ex.GetType().FullName,
+                ex.HResult,
+                HeaderText
+            );
         }
         finally
         {
@@ -419,6 +428,15 @@ public sealed partial class CardViewControl : UserControl
         _loadingDotsCts?.Cancel();
         _loadingDotsCts?.Dispose();
         _loadingDotsCts = null;
+
+        // Detach the ItemsView from the (singleton-owned) collection immediately.
+        // The inner ItemsView binds ItemsSource OneTime, so nulling the ItemsSource
+        // dependency property below does NOT propagate to it. Without this explicit
+        // detach, the torn-down ItemsView stays subscribed to the shared
+        // ObservableCollection's CollectionChanged event; a later mutation on a fresh
+        // page then delivers the event to this disconnected native peer and throws
+        // COMException 0x80004005 ("Unspecified error").
+        CardItemsView.ItemsSource = null;
 
         LoadCardsMethod = null;
         ViewModel = null;

@@ -230,6 +230,7 @@
           </StackPanel>
         </StackPanel>
         <ItemsView
+          x:Name="CardItemsView"
           Grid.Row="1"
           Padding="10"
           ItemTemplate="{StaticResource NormalItemTemplate}"
