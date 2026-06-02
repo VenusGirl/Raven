@@ -169,4 +169,8 @@ jobs:
           draft: true
           generate_release_notes: true
           files: |
-            ./artifacts/*.zip
+            ./artifacts/Raven-*-win-x64.zip
+            ./artifacts/Raven-*-win-x86.zip
+            ./artifacts/Raven-*-win-arm64.zip
+            ./artifacts/*-self-contained.zip
+            ./artifacts/raven_cert.zip

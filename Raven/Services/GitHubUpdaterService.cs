@@ -159,6 +159,8 @@ public sealed class GitHubUpdaterService
         return extractPath;
     }
 
+    private const string SelfContainedToken = "self-contained";
+
     private static (string name, string downloadUrl)? SelectZipAsset(JsonElement.ArrayEnumerator assets)
     {
         var preferredArchitectureToken = RuntimeInformation.ProcessArchitecture switch
@@ -169,7 +171,11 @@ public sealed class GitHubUpdaterService
             _ => string.Empty,
         };
 
-        (string name, string downloadUrl)? fallback = null;
+        var isSelfContained = IsSelfContainedDeployment();
+        
+        (string name, string downloadUrl)? archAndVariantMatch = null;
+        (string name, string downloadUrl)? archMatch = null;
+        (string name, string downloadUrl)? anyZip = null;
 
         foreach (var asset in assets)
         {
@@ -182,17 +188,31 @@ public sealed class GitHubUpdaterService
             if (!name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            fallback ??= (name, downloadUrl);
+            anyZip ??= (name, downloadUrl);
 
-            if (!string.IsNullOrEmpty(preferredArchitectureToken)
-                && name.Contains(preferredArchitectureToken, StringComparison.OrdinalIgnoreCase))
-            {
-                return (name, downloadUrl);
-            }
+            var archMatches = string.IsNullOrEmpty(preferredArchitectureToken)
+                || name.Contains(preferredArchitectureToken, StringComparison.OrdinalIgnoreCase);
+            if (!archMatches)
+                continue;
+
+            archMatch ??= (name, downloadUrl);
+
+            var assetIsSelfContained = name.Contains(SelfContainedToken, StringComparison.OrdinalIgnoreCase);
+            if (assetIsSelfContained == isSelfContained)
+                archAndVariantMatch ??= (name, downloadUrl);
         }
 
-        return fallback;
+        return archAndVariantMatch ?? archMatch ?? anyZip;
     }
+
+    /// <summary>
+    /// Detects whether the running instance is a self-contained deployment.
+    /// Self-contained builds ship the .NET runtime alongside the app, so
+    /// <c>coreclr.dll</c> sits next to the executable; framework-dependent
+    /// builds resolve it from the shared runtime and do not.
+    /// </summary>
+    private static bool IsSelfContainedDeployment() =>
+        File.Exists(Path.Combine(AppContext.BaseDirectory, "coreclr.dll"));
 
     private static Version? TryParseVersion(string tag)
     {
