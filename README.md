@@ -13,6 +13,7 @@
   <a href="https://github.com/mjishnu/Raven/blob/main/LICENSE"><img src="https://img.shields.io/github/license/mjishnu/Raven?style=flat-square&color=green" alt="License"></a>
   <a href="https://github.com/mjishnu/Raven/stargazers"><img src="https://img.shields.io/github/stars/mjishnu/Raven?style=flat-square" alt="Stars"></a>
   <a href="https://github.com/mjishnu/Raven/issues"><img src="https://img.shields.io/github/issues/mjishnu/Raven?style=flat-square" alt="Issues"></a>
+  <a href="https://discord.gg/9eeN2Wve4T"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Fv10%2Finvites%2F9eeN2Wve4T%3Fwith_counts%3Dtrue&query=%24.approximate_member_count&label=Discord&logo=discord&logoColor=white&color=5865F2&style=flat-square&suffix=%20members&cacheSeconds=3600" alt="Discord"></a>
 </p>
 
 ---

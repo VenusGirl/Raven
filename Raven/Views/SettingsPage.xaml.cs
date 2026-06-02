@@ -11,30 +11,6 @@ namespace Raven.Views;
 
 public sealed partial class SettingsPage : Page
 {
-    private const string StoreListingsThirdPartyLicenseText = """
-MIT License
-
-Copyright (c) 2024 Dongle
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-""";
-
     private const string ApacheLicenseText = """
                                  Apache License
                            Version 2.0, January 2004
@@ -284,39 +260,6 @@ SOFTWARE.
     private void LicenseLightboxContent_Tapped(object sender, TappedRoutedEventArgs e)
     {
         e.Handled = true;
-    }
-
-    private void ThirdPartyLicensesLink_Click(object sender, RoutedEventArgs e)
-    {
-        if (FindName(nameof(ThirdPartyStoreListingsLicenseTextBlock)) is TextBlock textBlock)
-        {
-            textBlock.Text = StoreListingsThirdPartyLicenseText;
-        }
-
-        SetThirdPartyLicensesLightboxVisibility(Visibility.Visible);
-    }
-
-    private void ThirdPartyLicensesLightboxCloseButton_Click(object sender, RoutedEventArgs e)
-    {
-        SetThirdPartyLicensesLightboxVisibility(Visibility.Collapsed);
-    }
-
-    private void ThirdPartyLicensesLightboxBackdrop_Tapped(object sender, TappedRoutedEventArgs e)
-    {
-        SetThirdPartyLicensesLightboxVisibility(Visibility.Collapsed);
-    }
-
-    private void ThirdPartyLicensesLightboxContent_Tapped(object sender, TappedRoutedEventArgs e)
-    {
-        e.Handled = true;
-    }
-
-    private void SetThirdPartyLicensesLightboxVisibility(Visibility visibility)
-    {
-        if (FindName(nameof(ThirdPartyLicensesLightbox)) is Grid lightbox)
-        {
-            lightbox.Visibility = visibility;
-        }
     }
 
     private async void CheckForAppUpdatesButton_Click(object sender, RoutedEventArgs e)
