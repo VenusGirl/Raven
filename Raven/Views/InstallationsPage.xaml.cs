@@ -359,9 +359,15 @@ public sealed partial class InstallationsPage : Page
 
         if (files.Count > 0)
         {
-            ViewModel.DependencyPaths.Clear();
+            // Append to the existing selection rather than replacing it; use the
+            // Clear (X) button to start over. Skip paths already selected so adding
+            // the same dependency twice still shows it only once (paths are
+            // compared case-insensitively, matching Windows file-system semantics).
             foreach (var f in files)
-                ViewModel.DependencyPaths.Add(f);
+            {
+                if (!ViewModel.DependencyPaths.Any(p => string.Equals(p, f, StringComparison.OrdinalIgnoreCase)))
+                    ViewModel.DependencyPaths.Add(f);
+            }
             UpdateDependenciesCount();
         }
     }
