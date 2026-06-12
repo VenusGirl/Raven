@@ -322,10 +322,13 @@ public sealed class VirtualGridLayout : VirtualizingLayout
         }
 
         int rows = RecalculateRowCountIfNeeded(ref s, context.ItemCount);
-        bool processAll = s.SignificantSizeChange;
+        // The flag is still consumed by RecalculateRowCountIfNeeded above; do NOT expand the
+        // arrange range with it. Arranging beyond the realization rect forces GetOrCreateElementAt
+        // to realize EVERY item (hundreds of cards + their bitmaps) on a maximize/restore — the
+        // host re-anchors the scroll position itself, so only the visible window is needed.
         s.SignificantSizeChange = false;
 
-        var visibleRange = GetVisibleRange(ref s, context.RealizationRect, rows, processAll);
+        var visibleRange = GetVisibleRange(ref s, context.RealizationRect, rows);
         ArrangeRows(ref s, context, visibleRange, finalSize.Width);
 
         return finalSize;
@@ -405,6 +408,11 @@ public sealed class VirtualGridLayout : VirtualizingLayout
             InvalidateRowMetricsCache(ref s);
             s.LCache.Invalidate();
             s.LastMinColumnSpacing = MinColumnSpacing;
+            // The row count depends on the column count, but RecalculateRowCountIfNeeded only
+            // recomputes on item-count change or a "significant" (>1 column / >100px) resize.
+            // A small resize crossing exactly one column boundary would otherwise keep a stale
+            // row count: bottom rows unreachable (shrink) or phantom blank space (grow).
+            s.LastItemCount = -1;
         }
 
         s.CellHeight = Math.Max(MinItemHeight, MinValidDimension);

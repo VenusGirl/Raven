@@ -36,6 +36,51 @@ public static class VersionCheckService
             _ => FE3OSArch.AMD64,
         };
 
+    // FE3 cookies carry an Expiration and are protocol-sanctioned for reuse (SyncUpdates
+    // itself chains NewCookie). Caching one per process skips a GetCookie SOAP round trip
+    // (~100-400ms) on every install / version check after the first; "Update all" of N apps
+    // issues ~1 GetCookie instead of N.
+    private static readonly object _cookieLock = new();
+    private static FE3Handler.Cookie? _cachedCookie;
+    private static DateTimeOffset _cachedCookieExpiryUtc;
+
+    private static FE3Handler.Cookie? TryGetCachedCookie()
+    {
+        lock (_cookieLock)
+        {
+            return _cachedCookie is not null
+                && DateTimeOffset.UtcNow < _cachedCookieExpiryUtc - TimeSpan.FromMinutes(5)
+                ? _cachedCookie
+                : null;
+        }
+    }
+
+    private static void CacheCookie(FE3Handler.Cookie cookie)
+    {
+        // Unparseable expiration: don't cache — behavior stays exactly as before.
+        if (!DateTimeOffset.TryParse(
+                cookie.Expiration,
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal
+                    | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                out var expiry))
+            return;
+        lock (_cookieLock)
+        {
+            _cachedCookie = cookie;
+            _cachedCookieExpiryUtc = expiry;
+        }
+    }
+
+    private static void InvalidateCachedCookie(FE3Handler.Cookie cookie)
+    {
+        lock (_cookieLock)
+        {
+            if (ReferenceEquals(_cachedCookie, cookie))
+                _cachedCookie = null;
+        }
+    }
+
     internal static async Task<PackagedSelectionContext?> GetPackagedSelectionContextAsync(
         string productId,
         CancellationToken cancellationToken = default,
@@ -84,18 +129,30 @@ public static class VersionCheckService
             return null;
         }
 
-        var cookieResult = await FE3Handler.GetCookieAsync(cancellationToken);
-        if (!cookieResult.IsSuccess)
-        {
-            onFailure?.Invoke(DownloadUrlFailureReason.StoreQueryFailed);
-            return null;
-        }
-
         var osArch = GetOsArch(resolvedArchRid);
 
+        var cachedCookie = TryGetCachedCookie();
+        FE3Handler.Cookie fe3Cookie;
+        if (cachedCookie is not null)
+        {
+            fe3Cookie = cachedCookie;
+        }
+        else
+        {
+            var cookieResult = await FE3Handler.GetCookieAsync(cancellationToken);
+            if (!cookieResult.IsSuccess)
+            {
+                onFailure?.Invoke(DownloadUrlFailureReason.StoreQueryFailed);
+                return null;
+            }
+            fe3Cookie = cookieResult.Value;
+        }
+
+        var wuCategoryId = packages.First().WuCategoryId;
+
         var fe3sync = await FE3Handler.SyncUpdatesAsync(
-            cookieResult.Value,
-            packages.First().WuCategoryId,
+            fe3Cookie,
+            wuCategoryId,
             language,
             market,
             currentBranch,
@@ -107,11 +164,48 @@ public static class VersionCheckService
             osArch
         );
 
+        // A cached cookie may have been rejected/expired server-side: retry once with a fresh one.
+        if (!fe3sync.IsSuccess && cachedCookie is not null)
+        {
+            // FE3Handler wraps OperationCanceledException into a failed Result, so a user
+            // cancel looks identical to a cookie rejection here. Don't discard a still-valid
+            // cookie or issue a doomed retry with an already-cancelled token.
+            if (cancellationToken.IsCancellationRequested)
+            {
+                onFailure?.Invoke(DownloadUrlFailureReason.StoreQueryFailed);
+                return null;
+            }
+
+            InvalidateCachedCookie(cachedCookie);
+            var freshCookieResult = await FE3Handler.GetCookieAsync(cancellationToken);
+            if (!freshCookieResult.IsSuccess)
+            {
+                onFailure?.Invoke(DownloadUrlFailureReason.StoreQueryFailed);
+                return null;
+            }
+            fe3sync = await FE3Handler.SyncUpdatesAsync(
+                freshCookieResult.Value,
+                wuCategoryId,
+                language,
+                market,
+                currentBranch,
+                flightRing,
+                flightingBranchName,
+                resolvedOsVersion,
+                deviceFamily,
+                cancellationToken,
+                osArch
+            );
+        }
+
         if (!fe3sync.IsSuccess)
         {
             onFailure?.Invoke(DownloadUrlFailureReason.StoreQueryFailed);
             return null;
         }
+
+        // Roll the cache forward with the server-refreshed cookie from this sync.
+        CacheCookie(fe3sync.Value.NewCookie);
 
         var updates = fe3sync.Value.Updates.ToList();
         var candidates = updates

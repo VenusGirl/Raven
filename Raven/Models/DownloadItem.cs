@@ -160,6 +160,11 @@ public partial class DownloadItem : INotifyPropertyChanged
 
     public void SetProgressSilent(double value) => _progress = value;
 
+    // Silent write for the per-progress-tick "touch": nothing binds LastAccessedAt (it is
+    // only read for sort order at load and during JSON saves), so raising PropertyChanged
+    // for it on every throttled progress tick was pure dispatcher/event churn.
+    public void SetLastAccessedAtSilent(DateTime value) => _lastAccessedAt = value;
+
     private List<DownloadedFile> _downloadedFiles = [];
 
     /// <summary>

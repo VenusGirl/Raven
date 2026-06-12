@@ -10,6 +10,8 @@ namespace Raven.Services;
 public sealed class AppUpdatePromptService
 {
     private const string CheckUpdatesOnStartupKey = "CheckForAppUpdatesOnStartup";
+    private const string LastUpdateCheckKey = "LastAppUpdateCheckUtc";
+    private static readonly TimeSpan StartupCheckInterval = TimeSpan.FromHours(24);
     private const string RuntimeLoggerCategory = "Raven.Runtime";
     private const string DefaultCheckForUpdatesLabel = "Check for updates";
 
@@ -352,9 +354,47 @@ public sealed class AppUpdatePromptService
             return;
         }
 
+        // Throttle: skip the GitHub request when a check succeeded within the last 24h,
+        // so every launch doesn't pay a network round trip (and a re-prompt for a release
+        // the user already dismissed).
+        try
+        {
+            var lastChecked = await _localSettingsService.ReadSettingAsync<DateTimeOffset?>(
+                LastUpdateCheckKey
+            );
+            if (lastChecked.HasValue)
+            {
+                var elapsed = DateTimeOffset.UtcNow - lastChecked.Value;
+                // elapsed < 0 means the clock moved backwards; don't let that suppress checks.
+                if (elapsed >= TimeSpan.Zero && elapsed < StartupCheckInterval)
+                {
+                    return;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read last update check timestamp");
+        }
+
         try
         {
             var release = await _gitHubUpdaterService.GetLatestReleaseAsync(cancellationToken);
+
+            // Persist only after a SUCCESSFUL check so offline/failed launches retry
+            // (silently) on the next launch instead of going dark for 24h.
+            try
+            {
+                await _localSettingsService.SaveSettingAsync(
+                    LastUpdateCheckKey,
+                    DateTimeOffset.UtcNow
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to persist last update check timestamp");
+            }
+
             if (release.IsUpToDate)
             {
                 return;
@@ -372,18 +412,10 @@ public sealed class AppUpdatePromptService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Startup update check failed");
-
-            await ShowManualUpdateDialogAsync(
-                xamlRoot,
-                cancellationToken,
-                startCheckImmediately: false,
-                initialTitle: "Settings_UpdaterErrorTitle".GetLocalized(),
-                initialStatusMessage: string.Format(
-                    "Settings_UpdaterErrorContent".GetLocalized(),
-                    ex.Message
-                )
-            );
+            // Startup check is best-effort: never interrupt launch with a modal error
+            // (offline, GitHub rate-limit/outage, request timeout). The manual check from
+            // Settings still surfaces errors in its own dialog.
+            _logger.LogWarning(ex, "Startup update check failed");
         }
     }
 

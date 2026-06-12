@@ -14,7 +14,6 @@ public sealed partial class UpdatesPage : Page
     public UpdatesViewModel ViewModel { get; }
 
     private readonly INavigationService _navigationService;
-    private readonly HashSet<string> _subscribedProductIds = new(StringComparer.OrdinalIgnoreCase);
 
     public UpdatesPage()
     {
@@ -28,40 +27,29 @@ public sealed partial class UpdatesPage : Page
     {
         base.OnNavigatedTo(e);
         DownloadManagerService.Instance.BeginObserving();
-
-        foreach (var updateItem in ViewModel.AvailableUpdates)
-            SubscribeToUpdateItemIfNeeded(updateItem);
     }
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
         base.OnNavigatedFrom(e);
-        DownloadManagerService.Instance.EndObserving();
-
-        foreach (var updateItem in ViewModel.AvailableUpdates)
-            updateItem.PropertyChanged -= OnUpdateItemPropertyChanged;
-
-        _subscribedProductIds.Clear();
 
         // Sever this transient page's x:Bind subscriptions to the singleton ViewModel,
         // which would otherwise root the page forever. Matches the MainPage/SearchPage pattern.
         Bindings.StopTracking();
+
+        // StopTracking only unhooks the page's x:Bind listeners; the ListViews stay subscribed
+        // to the singleton VM collections' CollectionChanged, which roots them (and via their
+        // ItemClick handlers this whole page) for the app's lifetime. Detach them explicitly —
+        // same bug class as CardViewControl.Cleanup's CardRepeater detach.
+        // Must run AFTER StopTracking so the OneWay x:Bind cannot re-assert the values.
+        UpdatesList.ItemsSource = null;
+        CompletedUpdatesList.ItemsSource = null;
+
+        // LAST: while the observer count is still >0, background updates are marshaled to
+        // the UI thread instead of mutating shared collections inline from worker threads
+        // (matches DownloadsPage's teardown ordering).
+        DownloadManagerService.Instance.EndObserving();
     }
-
-    private void SubscribeToUpdateItemIfNeeded(UpdateItem item)
-    {
-        if (string.IsNullOrWhiteSpace(item.ProductId))
-            return;
-
-        if (_subscribedProductIds.Contains(item.ProductId))
-            return;
-
-        item.PropertyChanged -= OnUpdateItemPropertyChanged;
-        item.PropertyChanged += OnUpdateItemPropertyChanged;
-        _subscribedProductIds.Add(item.ProductId);
-    }
-
-    private void OnUpdateItemPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e) { }
 
     private void ItemCheckBox_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {

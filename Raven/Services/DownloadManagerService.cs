@@ -31,8 +31,27 @@ public class DownloadManagerService
     // Simple observer count - when > 0, someone is viewing downloads (DownloadsPage or AppPage)
     private int _observerCount = 0;
 
-    public ObservableCollection<DownloadItem> Downloads { get; } = [];
+    // The persisted list loads on a background task started by the constructor (so first
+    // frame isn't blocked on file IO + JSON parse); every public read/mutation path goes
+    // through this guarded getter, which blocks only in the rare case the user reaches
+    // download state before the load finishes.
+    private readonly ObservableCollection<DownloadItem> _downloads = [];
+    private readonly Task _loadTask;
+
+    public ObservableCollection<DownloadItem> Downloads
+    {
+        get { EnsureLoaded(); return _downloads; }
+    }
+
     public HashSet<string> DownloadedProductIds { get; private set; } = [];
+
+    private void EnsureLoaded()
+    {
+        // Fast path is a single completed-task branch; GetResult never throws because
+        // the load task swallows its own exceptions.
+        if (!_loadTask.IsCompleted)
+            _loadTask.GetAwaiter().GetResult();
+    }
 
     private static bool IsActiveStatus(DownloadStatus? status) =>
         status is DownloadStatus.Downloading
@@ -46,7 +65,7 @@ public class DownloadManagerService
         "Downloads"
     );
 
-    private void TouchDownload(string productId)
+    private DownloadItem? TouchDownload(string productId)
     {
         DownloadItem? item;
         lock (_lock)
@@ -55,16 +74,26 @@ public class DownloadManagerService
         }
 
         if (item == null)
-            return;
+            return null;
 
         var now = DateTime.Now;
+
+        // Active downloads keep their alphabetical slot, and LastAccessedAt is only read
+        // for sort order at load — update it silently with no UI dispatch. This is the
+        // per-progress-tick hot path during a download.
+        if (IsActiveStatus(item.Status))
+        {
+            item.SetLastAccessedAtSilent(now);
+            return item;
+        }
 
         RunOnUIThread(() =>
         {
             item.LastAccessedAt = now;
 
-            // Active downloads keep their alphabetical slot; only inactive items
-            // bubble to the top of the inactive section on access.
+            // Re-check: status may have changed before the closure ran. Active downloads
+            // keep their alphabetical slot; only inactive items bubble to the top of the
+            // inactive section on access.
             if (IsActiveStatus(item.Status))
                 return;
 
@@ -76,6 +105,8 @@ public class DownloadManagerService
                     Downloads.Move(index, activeCount);
             }
         });
+
+        return item;
     }
 
     public void ClearDownloadedFileHash(string productId, string filePath)
@@ -141,11 +172,25 @@ public class DownloadManagerService
             "Raven/ApplicationData"
         );
 
-        Directory.CreateDirectory(appDataDir);
         _downloadDataPath = Path.Combine(appDataDir, "Downloads.json");
 
         _fileStore = new PersistentListStore<DownloadItem>(_downloadDataPath);
-        LoadDownloads();
+
+        // Load off-thread: Instance is first touched in OnLaunched, and a synchronous file
+        // read + JSON parse there delays the first frame. Saves don't depend on the
+        // directory existing here — PersistAsync creates it before every write.
+        _loadTask = Task.Run(async () =>
+        {
+            try
+            {
+                Directory.CreateDirectory(appDataDir);
+                await LoadDownloadsAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error loading downloads: {ex.Message}");
+            }
+        });
     }
 
     /// <summary>
@@ -460,19 +505,12 @@ public class DownloadManagerService
         var item = GetDownload(productId);
         if (item != null)
         {
-            if (IsAnyoneObserving)
-            {
-                RunOnUIThread(() =>
-                {
-                    item.ReceivedBytes = receivedBytes;
-                    item.TotalBytes = totalBytes;
-                });
-            }
-            else
-            {
-                item.ReceivedBytes = receivedBytes;
-                item.TotalBytes = totalBytes;
-            }
+            // ReceivedBytes/TotalBytes setters are intentionally silent (no PropertyChanged)
+            // and nothing binds to them, so no UI-thread marshaling is needed. The values are
+            // only read back on the 250ms-throttled progress tick to format the details string.
+            // (Marshaling here flooded the dispatcher with one work item per 64KB block.)
+            item.ReceivedBytes = receivedBytes;
+            item.TotalBytes = totalBytes;
         }
     }
 
@@ -527,8 +565,7 @@ public class DownloadManagerService
 
     public void UpdateDownloadStatusText(string productId, string? statusTextOverride)
     {
-        TouchDownload(productId);
-        var item = GetDownload(productId);
+        var item = TouchDownload(productId);
         if (item != null)
         {
             if (IsAnyoneObserving)
@@ -544,8 +581,7 @@ public class DownloadManagerService
 
     public void UpdateDownloadDetailsText(string productId, string detailsText)
     {
-        TouchDownload(productId);
-        var item = GetDownload(productId);
+        var item = TouchDownload(productId);
         if (item == null)
             return;
 
@@ -565,6 +601,14 @@ public class DownloadManagerService
         var item = GetDownload(productId);
         if (item != null)
         {
+            // A terminal status ends the flow a remembered cancel request belonged to.
+            // Letting the flag outlive its flow would auto-cancel the product's NEXT
+            // download the moment it registers its CTS.
+            if (status is DownloadStatus.Completed or DownloadStatus.Cancelled or DownloadStatus.Failed)
+            {
+                _cancellationRequested.TryRemove(productId, out _);
+            }
+
             void ApplyStatus()
             {
                 var previousStatus = item.Status;
@@ -649,6 +693,9 @@ public class DownloadManagerService
 
     public bool IsDownloaded(string productId)
     {
+        // The only public member that reads persisted state without going through the
+        // guarded Downloads getter.
+        EnsureLoaded();
         lock (_lock)
         {
             return DownloadedProductIds.Contains(productId);
@@ -670,23 +717,13 @@ public class DownloadManagerService
         }
     }
 
-    private void LoadDownloads()
-    {
-        try
-        {
-            Task.Run(LoadDownloadsAsync).GetAwaiter().GetResult();
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"Error loading downloads: {ex.Message}");
-        }
-    }
-
+    // NOTE: runs inside _loadTask; must use the _downloads backing field, never the
+    // Downloads property — the guarded getter would self-deadlock waiting on _loadTask.
     private async Task LoadDownloadsAsync()
     {
         var items = await _fileStore.LoadAsync();
-        
-        Downloads.Clear();
+
+        _downloads.Clear();
         DownloadedProductIds.Clear();
         
         foreach (var item in items)
@@ -748,18 +785,18 @@ public class DownloadManagerService
                     ? DownloadStatus.Completed
                     : DownloadStatus.Cancelled;
             }
-            Downloads.Add(item);
+            _downloads.Add(item);
             if (item.Status is DownloadStatus.Completed)
             {
                 DownloadedProductIds.Add(item.ProductId);
             }
         }
 
-        var sorted = Downloads.OrderByDescending(d => d.LastAccessedAt).ToList();
-        Downloads.Clear();
+        var sorted = _downloads.OrderByDescending(d => d.LastAccessedAt).ToList();
+        _downloads.Clear();
         foreach (var d in sorted)
         {
-            Downloads.Add(d);
+            _downloads.Add(d);
         }
     }
 

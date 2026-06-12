@@ -11,6 +11,7 @@
     xmlns:models="using:StoreListings.Library">
     <Page.Resources>
         <ResourceDictionary>
+            <helpers:StringToUriConverter x:Key="StringToUriConverter" />
             <!--  DataTemplate for string suggestions  -->
             <DataTemplate x:Key="StringSuggestionTemplate">
                 <TextBlock
@@ -25,12 +26,20 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
+                    <!--  Decode at the displayed 40px (DPI-scaled) instead of the logo's
+                          natural size (often 300px+) — these decode on every suggestion query.  -->
                     <Image
                         Grid.Column="0"
                         Width="40"
                         Height="40"
-                        Margin="4"
-                        Source="{x:Bind Image.Url}" />
+                        Margin="4">
+                        <Image.Source>
+                            <BitmapImage
+                                DecodePixelType="Logical"
+                                DecodePixelWidth="40"
+                                UriSource="{x:Bind Image.Url, Converter={StaticResource StringToUriConverter}}" />
+                        </Image.Source>
+                    </Image>
                     <TextBlock
                         HorizontalAlignment="Left"
                         Grid.Column="1"

@@ -2,6 +2,7 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -64,9 +65,16 @@ public partial class App : Application
 
     private static IHost BuildHost()
     {
-        var builder = Microsoft.Extensions.Hosting.Host.CreateDefaultBuilder().UseContentRoot(
-            AppContext.BaseDirectory
-        );
+        // Plain HostBuilder instead of CreateDefaultBuilder: this app uses none of the
+        // defaults' extras (env-specific config, env-var overrides, user secrets, default
+        // logging providers — Serilog replaces the logger factory anyway), and the defaults
+        // cost startup time plus a FileSystemWatcher on the install directory held for the
+        // app's lifetime (pointless under WindowsApps where the files can never change).
+        var builder = new HostBuilder()
+            .UseContentRoot(AppContext.BaseDirectory)
+            .ConfigureAppConfiguration(cfg =>
+                cfg.AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
+            );
 
         builder.UseSerilog((_, _, loggerConfiguration) => ConfigureLogging(loggerConfiguration));
 

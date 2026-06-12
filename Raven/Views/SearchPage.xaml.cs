@@ -1,5 +1,4 @@
-﻿using System.Collections.ObjectModel;
-using Microsoft.UI.Xaml.Controls;
+﻿using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using StoreListings.Library;
 using Raven.Contracts.Services;
@@ -9,8 +8,6 @@ namespace Raven.Views;
 
 public sealed partial class SearchPage : Page
 {
-    public ObservableCollection<Card> Cards { get; set; } = [];
-
     public SearchViewModel ViewModel { get; }
     private readonly ILocaleService _localeService;
 
@@ -90,7 +87,14 @@ public sealed partial class SearchPage : Page
         }
         else if (e.Parameter is Card card)
         {
-            CardView.NavigateToProductOrBundle(card.ProductId, card.InstallerType);
+            // Forward navigations only: this entry stays in the back stack, and re-running
+            // the product navigation on NavigationMode.Back would trap the user (Back from
+            // AppPage would immediately re-open AppPage, re-fetching the product each time).
+            // On Back, fall through and show the cached search results instead.
+            if (e.NavigationMode == NavigationMode.New)
+            {
+                CardView.NavigateToProductOrBundle(card.ProductId, card.InstallerType);
+            }
         }
     }
 

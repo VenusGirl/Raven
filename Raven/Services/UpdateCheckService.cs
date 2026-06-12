@@ -307,6 +307,7 @@ public static class UpdateCheckService
         var itemCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         downloadManager.RegisterCancellationToken(item.ProductId, itemCts);
 
+        UIUpdateService? uiUpdateService = null;
         try
         {
             var fileEntry = await GetDownloadUrl.fetch(
@@ -327,7 +328,7 @@ public static class UpdateCheckService
             }
             else
             {
-                var uiUpdateService = new UIUpdateService(dispatcher);
+                uiUpdateService = new UIUpdateService(dispatcher);
                 await DownloadHelper.StartDownloadAsync(
                     fileEntry,
                     item.ProductId,
@@ -352,6 +353,10 @@ public static class UpdateCheckService
         finally
         {
             pendingAnimator?.Stop(downloadItem); // no-op if already stopped above
+            // This service is throwaway (nothing observes it after this method): if an
+            // exception escaped DownloadHelper with its status animation still running, the
+            // DispatcherQueueTimer would tick forever. Stop is a safe no-op otherwise.
+            uiUpdateService?.StopStatusAnimation();
             downloadManager.UnregisterCancellationToken(item.ProductId);
             itemCts.Dispose();
             unsubscribeDownloadItem();

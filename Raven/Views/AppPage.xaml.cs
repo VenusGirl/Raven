@@ -28,6 +28,7 @@ public sealed partial class AppPage : Page
     private ProductData? _currentProductInfo;
     private DownloadItem? _activeDownloadItem;
     private bool _isForceInstalling;
+    private bool _navigatedAway;
     private int _lightboxIndex;
     private string _naturalAction = "Install";
     private string? _overrideAction;
@@ -106,6 +107,7 @@ public sealed partial class AppPage : Page
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
         base.OnNavigatedFrom(e);
+        _navigatedAway = true;
 
         _productLoadCts?.Cancel();
         _productLoadCts?.Dispose();
@@ -199,6 +201,12 @@ public sealed partial class AppPage : Page
             {
                 downloadItem.ProductInfo = product.ProductInfo;
             }
+
+            // The fetch may complete after the user already navigated away (the token only
+            // guards the network awaits, so no OCE is thrown in that window). Keep the
+            // ProductInfo backfill above, but skip loading the torn-down page's UI.
+            if (_navigatedAway)
+                return;
 
             LoadProduct(product.ProductInfo);
         }
@@ -364,6 +372,14 @@ public sealed partial class AppPage : Page
 
     private void BindToDownloadItem(DownloadItem item)
     {
+        // Late async continuations (product fetch resuming after teardown, InstallButton_Click's
+        // finally running after the download ends) can land here AFTER OnNavigatedFrom already
+        // unbound this page. Re-subscribing then would root this dead page via the singleton-held
+        // item's PropertyChanged until the item next reaches a terminal status — or forever if it
+        // never does. Navigation teardown is final for this transient page, so refuse to re-bind.
+        if (_navigatedAway)
+            return;
+
         // A DownloadItem lives in the long-lived DownloadManagerService collection, so a stray
         // PropertyChanged subscription keeps this page alive (leak). BindToDownloadItem is called
         // repeatedly (e.g. from UpdateInstallButtonState during an active download), so guard the
@@ -1545,9 +1561,22 @@ public sealed partial class AppPage : Page
 
         if (!string.IsNullOrWhiteSpace(screenshot.Url))
         {
-            LightboxImage.Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(
-                new Uri(screenshot.Url)
-            );
+            // Cap the decode at the displayed size (the lightbox Image has MaxWidth=1100):
+            // a full-resolution 4K screenshot otherwise decodes ~33 MB per open/next/prev.
+            // Physical decode scaled by the rasterization scale keeps high-DPI sharpness,
+            // and clamping to the native width guarantees we never upscale the decode.
+            double scale = XamlRoot?.RasterizationScale ?? 1.0;
+            int decodeWidth = (int)Math.Ceiling(1100 * scale);
+            if (screenshot.Width > 0)
+                decodeWidth = Math.Min(decodeWidth, screenshot.Width);
+
+            var bmp = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage
+            {
+                DecodePixelType = Microsoft.UI.Xaml.Media.Imaging.DecodePixelType.Physical,
+                DecodePixelWidth = decodeWidth,
+            };
+            bmp.UriSource = new Uri(screenshot.Url);
+            LightboxImage.Source = bmp;
         }
 
         LightboxCounter.Text = string.Format(

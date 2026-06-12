@@ -10,6 +10,24 @@ namespace Raven.Helpers;
 
 public sealed class DownloadHelper
 {
+    /// <summary>
+    /// IProgress that invokes the handler synchronously on the reporting thread, so the
+    /// 250ms throttle short-circuits before any dispatcher marshal. The delta progress
+    /// handler is thread-agnostic: Volatile/Interlocked throttle state, silent setters
+    /// when unobserved, and RunOnUIThread for actual UI mutations.
+    /// </summary>
+    private sealed class SyncProgress<T>(Action<T> handler) : IProgress<T>
+    {
+        public void Report(T value) => handler(value);
+    }
+
+    // Shared client for blockmap/delta downloads: reuses pooled CDN connections across
+    // files of an install instead of paying a fresh DNS+TCP+TLS handshake per file.
+    // PooledConnectionLifetime bounds DNS staleness for the long-lived client.
+    private static readonly HttpClient s_deltaHttpClient = new(
+        new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5) }
+    );
+
     private static async Task DownloadAsync(
         DownloadConfiguration config,
         string url,
@@ -23,10 +41,16 @@ public sealed class DownloadHelper
         using var svc = new DownloadService(config);
 
         long lastReceivedBytes = 0;
+        long lastTotalBytes = 0;
         svc.DownloadProgressChanged += (_, e) =>
         {
-            if (e.TotalBytesToReceive > 0)
+            // The event fires per buffer block (~64KB); the total only changes once per
+            // attempt, so gate the callback on change instead of invoking it every block.
+            if (e.TotalBytesToReceive > 0 && e.TotalBytesToReceive != lastTotalBytes)
+            {
+                lastTotalBytes = e.TotalBytesToReceive;
                 onTotalBytesKnown?.Invoke(e.TotalBytesToReceive);
+            }
 
             // e.ReceivedBytesSize is cumulative bytes received.
             if (e.ReceivedBytesSize >= 0 && e.ReceivedBytesSize != lastReceivedBytes)
@@ -369,9 +393,7 @@ public sealed class DownloadHelper
                     // This ensures blockmap/cab cache is written to temp and allows retries to resume.
                     if (canUseBlockmapDelta)
                     {
-                        using var http = new HttpClient();
-
-                        var deltaProgress = new Progress<(long bytesDownloaded, long totalBytes)>(
+                        var deltaProgress = new SyncProgress<(long bytesDownloaded, long totalBytes)>(
                             p =>
                             {
                                 long tickNow = Environment.TickCount64;
@@ -423,7 +445,7 @@ public sealed class DownloadHelper
 
                         await DeltaDownloadHelper
                             .ApplyDeltaUsingBlockmapAsync(
-                                http,
+                                s_deltaHttpClient,
                                 file.Url,
                                 destinationPath,
                                 file.BlockmapUrl!,
@@ -466,24 +488,18 @@ public sealed class DownloadHelper
                                 attemptToken,
                                 totalBytes =>
                                 {
+                                    // Direct assignment is sufficient: cachedItem IS the manager's
+                                    // instance and the byte setters are intentionally silent (no
+                                    // PropertyChanged), so routing through UpdateDownloadBytes only
+                                    // added a per-64KB-block lock + list scan.
                                     if (totalBytes > 0)
                                     {
                                         cachedItem.TotalBytes = totalBytes;
-                                        downloadManager.UpdateDownloadBytes(
-                                            productId,
-                                            cachedItem.ReceivedBytes,
-                                            cachedItem.TotalBytes
-                                        );
                                     }
                                 },
                                 receivedBytes =>
                                 {
                                     cachedItem.ReceivedBytes = receivedBytes;
-                                    downloadManager.UpdateDownloadBytes(
-                                        productId,
-                                        cachedItem.ReceivedBytes,
-                                        cachedItem.TotalBytes
-                                    );
                                 },
                                 progress =>
                                 {
@@ -545,7 +561,18 @@ public sealed class DownloadHelper
                                 productId,
                                 string.Format("Download_Status_RestartingIn".GetLocalized(), delayMs / 1000.0)
                             );
-                            await Task.Delay(delayMs, token).ConfigureAwait(false);
+                            // A user cancel during the backoff delay must not escape the method:
+                            // it would skip the animator/status-animation stops below, leaving a
+                            // DispatcherQueueTimer running (and ticking PropertyChanged) forever.
+                            try
+                            {
+                                await Task.Delay(delayMs, token).ConfigureAwait(false);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                cancelled = true;
+                                break;
+                            }
                             continue;
                         }
 
@@ -568,7 +595,15 @@ public sealed class DownloadHelper
                         productId,
                         string.Format("Download_Status_NetworkIssue".GetLocalized(), delayMs / 1000.0)
                     );
-                    await Task.Delay(delayMs, token).ConfigureAwait(false);
+                    try
+                    {
+                        await Task.Delay(delayMs, token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        cancelled = true;
+                        break;
+                    }
                 }
                 catch (Exception ex) when (attempt < MAX_RETRIES_PER_FILE)
                 {
@@ -577,7 +612,15 @@ public sealed class DownloadHelper
                         productId,
                         string.Format("Download_Status_RetryError".GetLocalized(), ex.Message, delayMs / 1000.0)
                     );
-                    await Task.Delay(delayMs, token).ConfigureAwait(false);
+                    try
+                    {
+                        await Task.Delay(delayMs, token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        cancelled = true;
+                        break;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -631,6 +674,10 @@ public sealed class DownloadHelper
                 downloadManager.UpdateDownloadBytes(productId, null, null);
             }
             catch { }
+            // Without a terminal status the item stays "Downloading" forever:
+            // HasActiveDownload remains true, a navigated-away AppPage's finally re-binds
+            // to the item and is rooted indefinitely, and the live page never offers Retry.
+            downloadManager.UpdateDownloadStatus(productId, Raven.Models.DownloadStatus.Failed);
             return;
         }
 
@@ -679,6 +726,10 @@ public sealed class DownloadHelper
         if (string.IsNullOrWhiteSpace(mainPackagePath) || !File.Exists(mainPackagePath))
         {
             // Can't locate main package on disk; mark failed.
+            // Stop the list animator too (every other terminal path does): the install-phase
+            // timer it started at Start() above would otherwise tick forever — the animator is
+            // method-local, so nothing else can ever reach it to stop it.
+            animator.Stop(downloadItem);
             updateService.StopStatusAnimation();
             downloadManager.UpdateDownloadStatusText(
                 productId,

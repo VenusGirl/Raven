@@ -25,6 +25,7 @@ public sealed partial class CardViewControl : UserControl
     private bool filterBtnActive = false;
     private bool isLoadingMore = false;
     private CancellationTokenSource? _loadingDotsCts;
+    private CancellationTokenSource? _navigateCts;
     private readonly ILocaleService _localeService;
     private readonly ILogger<CardViewControl> _logger;
 
@@ -435,7 +436,12 @@ public sealed partial class CardViewControl : UserControl
 
         _atEnd = scrollable > 0 && offset >= scrollable - EndThreshold;
 
-        if (offset > 0 && !isLoadingMore)
+        // Persist the position only when the view settles: FirstVisibleIndex is consumed
+        // on navigation restore and resize anchoring, never per frame, and SaveScrollPosition
+        // does TransformToVisual interop + DP reads that are wasted on intermediate ticks.
+        // No offset>0 guard: settling at the exact top must save index 0, or a stale deep
+        // index would be restored on the next visit (and re-anchored to on window resize).
+        if (!e.IsIntermediate && !isLoadingMore)
         {
             SaveScrollPosition();
         }
@@ -448,6 +454,11 @@ public sealed partial class CardViewControl : UserControl
         )
         {
             await LoadMoreCards();
+            // If the fling settled while the load was in flight, the settled ViewChanged was
+            // swallowed by the isLoadingMore gate above; capture the final position now.
+            // (SaveScrollPosition no-ops if the control was cleaned up during the await.)
+            if (!_restorePending && ViewModel != null && Scroller.VerticalOffset > 0)
+                SaveScrollPosition();
         }
     }
 
@@ -577,9 +588,23 @@ public sealed partial class CardViewControl : UserControl
         Loaded -= CardViewControl_Loaded;
         Unloaded -= CardViewControl_Unloaded;
 
+        // Saves now happen only on settled scrolls, so navigating away mid-gesture would
+        // restore a stale pre-gesture position. Snapshot the live offset here, while the
+        // geometry is still intact. offset>0 guard: a spurious Unloaded could read 0 and
+        // erase a legitimate saved index.
+        if (!_restorePending && !isLoadingMore && Scroller.VerticalOffset > 0)
+            SaveScrollPosition();
+
         _loadingDotsCts?.Cancel();
         _loadingDotsCts?.Dispose();
         _loadingDotsCts = null;
+
+        // Cancel any in-flight card-click product fetch: its continuation would otherwise
+        // root this torn-down control until the HTTP call completes and then perform a
+        // stale Navigate the user no longer wants.
+        _navigateCts?.Cancel();
+        _navigateCts?.Dispose();
+        _navigateCts = null;
 
         // Detach the repeater from the (singleton-owned) collection immediately.
         // The repeater binds ItemsSource OneTime, so nulling the ItemsSource dependency
@@ -622,10 +647,22 @@ public sealed partial class CardViewControl : UserControl
         _loadingDotsCts = new CancellationTokenSource();
         _ = AnimateLoadingDotsAsync(_loadingDotsCts.Token);
 
+        // Fresh CTS per click: a newer click supersedes an in-flight fetch, and Cleanup()
+        // cancels it on teardown so the continuation can't stale-Navigate from a dead page.
+        _navigateCts?.Cancel();
+        _navigateCts?.Dispose();
+        _navigateCts = new CancellationTokenSource();
+        var navToken = _navigateCts.Token;
+
         var NavigationFrame = App.GetService<INavigationService>().Frame;
         try
         {
-            var product = await Utils.ProductOrBundle(productId, installerType, market: _localeService.Market, language: _localeService.Language);
+            var product = await Utils.ProductOrBundle(productId, installerType, navToken, market: _localeService.Market, language: _localeService.Language);
+
+            // The token only guards the network awaits; a cancel landing after they complete
+            // resumes here without an OCE. Don't navigate on behalf of a torn-down page.
+            if (navToken.IsCancellationRequested)
+                return;
 
             LoadingOverlay.Visibility = Visibility.Collapsed;
 
@@ -640,6 +677,10 @@ public sealed partial class CardViewControl : UserControl
             {
                 NavigationFrame?.Navigate(typeof(AppPage), product.ProductInfo);
             }
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded or torn down mid-fetch: nothing to show, nothing to navigate to.
         }
         catch (Exception ex)
         {

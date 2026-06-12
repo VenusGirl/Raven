@@ -70,8 +70,11 @@
                 >
                   <Image Stretch="Fill">
                     <Image.Source>
+                      <!--  Must match the background's DecodePixelWidth (191) exactly so XAML's
+                            decoded-image cache shares one decode per URI instead of decoding the
+                            same image twice per card; the compositor downscales to the 80px box.  -->
                       <BitmapImage
-                        DecodePixelWidth="80"
+                        DecodePixelWidth="191"
                         UriSource="{x:Bind Image.Url, Converter={StaticResource StringToUriConverter}}"
                       />
                     </Image.Source>

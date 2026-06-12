@@ -116,6 +116,10 @@ class Utils
             if (packages.Count == 0)
                 throw new Exception("No packages found for this product.");
 
+            // Remember this catalog response so an Install/Update click on the page we are
+            // about to open can skip re-fetching the identical DCAT data (5-minute TTL).
+            DcatPrefetchCache.Store(productId, market, language, packages);
+
             // ---------------------------------------------------------
             // Architecture Selection
             // ---------------------------------------------------------
@@ -215,7 +219,8 @@ class Utils
         UIElement displayItem,
         UIElement errorIcon,
         UIElement loadingOverlay,
-        TextBlock errorIconText
+        TextBlock errorIconText,
+        CancellationToken cancellationToken = default
     )
     {
         if (sender is FrameworkElement element && element.Tag is Card card)
@@ -227,7 +232,8 @@ class Utils
                 displayItem,
                 errorIcon,
                 loadingOverlay,
-                errorIconText
+                errorIconText,
+                cancellationToken
             );
         }
         else
@@ -243,7 +249,8 @@ class Utils
         UIElement displayItem,
         UIElement errorIcon,
         UIElement loadingOverlay,
-        TextBlock errorIconText
+        TextBlock errorIconText,
+        CancellationToken cancellationToken = default
     )
     {
         displayItem.Visibility = Visibility.Collapsed;
@@ -252,7 +259,12 @@ class Utils
         try
         {
             var localeService = App.GetService<ILocaleService>();
-            var product = await Utils.ProductOrBundle(productId, installerType, market: localeService.Market, language: localeService.Language);
+            var product = await Utils.ProductOrBundle(productId, installerType, cancellationToken, market: localeService.Market, language: localeService.Language);
+
+            // The token only guards the network awaits; a cancel landing after they complete
+            // resumes here without an OCE. Don't touch the dead page's UI or stale-Navigate.
+            if (cancellationToken.IsCancellationRequested)
+                return;
 
             loadingOverlay.Visibility = Visibility.Collapsed;
 
@@ -267,6 +279,10 @@ class Utils
             {
                 navigationFrame.Navigate(typeof(AppPage), product.ProductInfo);
             }
+        }
+        catch (OperationCanceledException)
+        {
+            // Caller navigated away mid-fetch: nothing to show, nothing to navigate to.
         }
         catch (Exception ex)
         {

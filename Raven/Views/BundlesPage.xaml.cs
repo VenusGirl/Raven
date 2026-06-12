@@ -19,6 +19,7 @@ public sealed partial class BundlesPage : Page
 
     private readonly Compositor _compositor;
     private SpringVector3NaturalMotionAnimation? _springAnimation;
+    private CancellationTokenSource? _navigateCts;
 
     public BundlesViewModel ViewModel { get; }
 
@@ -37,6 +38,17 @@ public sealed partial class BundlesPage : Page
         {
             LoadData(productInfo, bundleInfo);
         }
+    }
+
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        base.OnNavigatedFrom(e);
+
+        // Cancel any in-flight card-click product fetch: its continuation would otherwise
+        // root this dead page until the HTTP call completes and then perform a stale Navigate.
+        _navigateCts?.Cancel();
+        _navigateCts?.Dispose();
+        _navigateCts = null;
     }
 
     private void LoadData(ProductData productInfo, StoreEdgeFDQuery bundleInfo)
@@ -85,13 +97,20 @@ public sealed partial class BundlesPage : Page
 
     private void Card_Tapped(object sender, TappedRoutedEventArgs e)
     {
+        // Fresh CTS per click: a newer click supersedes an in-flight fetch, and
+        // OnNavigatedFrom cancels it on teardown.
+        _navigateCts?.Cancel();
+        _navigateCts?.Dispose();
+        _navigateCts = new CancellationTokenSource();
+
         Utils.HandleCardTapped(
             sender as FrameworkElement,
             Frame,
             DisplayItem,
             ErrorIcon,
             LoadingOverlay,
-            ErrorIconText
+            ErrorIconText,
+            _navigateCts.Token
         );
     }
 

@@ -183,7 +183,9 @@ public static class GetDownloadUrl
                     var selectionContext = await VersionCheckService.GetPackagedSelectionContextAsync(
                         productId,
                         cancellationToken,
-                        prefetchedPackages: null,
+                        // Reuse the catalog response fetched when the product page opened
+                        // (same product/market/language within 5 min) instead of re-downloading it.
+                        prefetchedPackages: DcatPrefetchCache.TryGet(productId, market, language),
                         deviceFamily,
                         market,
                         language,
@@ -301,27 +303,19 @@ public static class GetDownloadUrl
                                 .Distinct()
                                 .ToList();
 
-                            // Get url for all dependencies of this build.
-                            var depEntries = new List<FileEntry>();
-                            var depsResolved = true;
-                            foreach (var depUpdate in requiredDepUpdates)
-                            {
-                                var depEntry = await ResolveDownloadEntry(
-                                    depUpdate,
-                                    Array.Empty<FileEntry>()
-                                );
+                            // Get url for all dependencies of this build. Each ResolveDownloadEntry
+                            // is an independent FE3 POST (no shared mutable state), so run them
+                            // concurrently — saves one round trip per dependency beyond the first.
+                            var depResults = await Task.WhenAll(
+                                requiredDepUpdates.Select(depUpdate =>
+                                    ResolveDownloadEntry(depUpdate, Array.Empty<FileEntry>())
+                                )
+                            );
 
-                                if (depEntry is null)
-                                {
-                                    depsResolved = false;
-                                    break;
-                                }
-
-                                depEntries.Add(depEntry);
-                            }
-
-                            if (!depsResolved)
+                            if (depResults.Any(r => r is null))
                                 continue; // A dependency URL failed; try the next candidate.
+
+                            var depEntries = depResults.Select(r => r!).ToList();
 
                             // Get url for the main file.
                             var mainEntry = await ResolveDownloadEntry(main, depEntries);

@@ -352,31 +352,44 @@ public sealed partial class ShellPage : Page
         AutoSuggestBoxTextChangedEventArgs args
     )
     {
-        if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
+        if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput)
+            return;
+
+        var query = sender.Text;
+        if (string.IsNullOrWhiteSpace(query))
         {
-            var query = sender.Text;
-            if (string.IsNullOrWhiteSpace(query))
-            {
-                sender.ItemsSource = null;
-            }
-            else
-            {
-                // Cancel any previous request
-                suggestionCancellationTokenSource?.Cancel();
-                suggestionCancellationTokenSource = new CancellationTokenSource();
+            // Cancel any in-flight request so its stale result can't repopulate the cleared list.
+            suggestionCancellationTokenSource?.Cancel();
+            sender.ItemsSource = null;
+            return;
+        }
 
-                // Call your API that returns card suggestions.
-                var suggestions = await GetCardSuggestionsAsync(
-                    query,
-                    suggestionCancellationTokenSource.Token
-                );
+        // Cancel any previous request. Capture THIS request's token before any await: after
+        // resuming, the field may already point to a newer keystroke's CTS, and checking the
+        // field would let a stale (cancelled) request blank or overwrite the newer suggestions.
+        suggestionCancellationTokenSource?.Cancel();
+        suggestionCancellationTokenSource?.Dispose();
+        suggestionCancellationTokenSource = new CancellationTokenSource();
+        var token = suggestionCancellationTokenSource.Token;
 
-                // Only update UI if not cancelled
-                if (!suggestionCancellationTokenSource.IsCancellationRequested)
-                {
-                    sender.ItemsSource = suggestions;
-                }
-            }
+        // Debounce: collapse a burst of keystrokes into one HTTP request instead of one per
+        // keystroke. A newer keystroke cancels this delay, so only the pause after typing fires.
+        try
+        {
+            await Task.Delay(200, token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        // Call your API that returns card suggestions.
+        var suggestions = await GetCardSuggestionsAsync(query, token);
+
+        // Only update UI if not cancelled
+        if (!token.IsCancellationRequested)
+        {
+            sender.ItemsSource = suggestions;
         }
     }
 

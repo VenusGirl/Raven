@@ -144,7 +144,6 @@ public sealed partial class DownloadsPage : Page
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
         base.OnNavigatedFrom(e);
-        DownloadManagerService.Instance.EndObserving();
 
         if (_animator != null)
         {
@@ -161,6 +160,19 @@ public sealed partial class DownloadsPage : Page
         // (the ListView's ItemsSource is the singleton DownloadManagerService collection),
         // which would otherwise root the page forever. Matches the MainPage/SearchPage pattern.
         Bindings.StopTracking();
+
+        // StopTracking only unhooks the page's x:Bind listeners; the ListView itself stays
+        // subscribed to the singleton collection's CollectionChanged, which roots the ListView
+        // (and via its ItemClick handler this whole page) for the app's lifetime. Detach it
+        // explicitly — same bug class as CardViewControl.Cleanup's CardRepeater detach.
+        // Must run AFTER StopTracking so the OneWay x:Bind cannot re-assert the value.
+        DownloadsList.ItemsSource = null;
+
+        // LAST: while the observer count is still >0, background status updates are marshaled
+        // to the UI thread (queued behind this handler). Decrementing earlier would let a
+        // worker thread mutate the Downloads collection inline — firing CollectionChanged
+        // into the still-attached ListView on the wrong thread and racing the foreach above.
+        DownloadManagerService.Instance.EndObserving();
     }
 
     private void DownloadsList_ItemClick(object sender, ItemClickEventArgs e)

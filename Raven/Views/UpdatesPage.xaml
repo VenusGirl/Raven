@@ -298,6 +298,7 @@
         />
         <!--  Completed list  -->
         <ListView
+          x:Name="CompletedUpdatesList"
           IsItemClickEnabled="True"
           ItemClick="UpdateItem_ItemClick"
           ItemsSource="{x:Bind ViewModel.CompletedUpdates, Mode=OneWay}"
